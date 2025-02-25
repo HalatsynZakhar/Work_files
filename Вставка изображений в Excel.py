@@ -3,8 +3,17 @@ from openpyxl.drawing.image import Image
 from PIL import Image as PILImage  # Для работы с изображениями
 import os
 
+# Путь к папке с изображениями
+folder_path = "C:/Users/ABM/Desktop/Image_1c/"
+
 # Путь к существующему файлу Excel
 file_path = "C:/Users/ABM/Desktop/Лист Microsoft Excel.xlsx"
+
+# Выбор исходной ячейки (столбец с именами изображений)
+input_column = 'B'  # Входной столбец с именами изображений
+
+# Выбор целевой ячейки (столбец, куда будут вставляться изображения)
+output_column = 'A'  # Столбец, в который вставляются изображения
 
 # Попытка открыть файл
 try:
@@ -15,23 +24,17 @@ except FileNotFoundError:
     wb = openpyxl.Workbook()  # Создаём новый файл
     ws = wb.active
 
-# Путь к папке с изображениями
-folder_path = "C:/Users/ABM/Desktop/Image_1c/"
-
-# Выбор исходной ячейки (столбец с именами изображений)
-input_column = 'B'  # Входной столбец с именами изображений
-
-# Выбор целевой ячейки (столбец, куда будут вставляться изображения)
-output_column = 'A'  # Столбец, в который вставляются изображения
-
 # Начинаем с первой строки
 start_row = 2  # Начальная строка для обработки
 
 # Обрабатываем все ячейки в исходной колонке (столбец B) начиная с указанной строки
 for row in range(start_row, ws.max_row + 1):  # Обрабатываем все строки начиная с 2-й
-    image_name = ws[f'{input_column}{row}'].value  # Получаем имя изображения из исходной ячейки
+    image_name = str(ws[f'{input_column}{row}'].value)  # Получаем имя изображения из исходной ячейки
+
     if image_name:  # Если имя изображения не пустое
-        image_path = os.path.join(folder_path, str(image_name) + ".jpg")
+        # Игорируем пробелы и регистр при сравнении имен
+        image_name = image_name.strip().lower()  # Убираем пробелы и приводим к нижнему регистру
+        image_path = os.path.join(folder_path, image_name + ".jpg")
 
         # Проверка существования изображения
         if os.path.exists(image_path):
