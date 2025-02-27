@@ -140,7 +140,7 @@ try:
 
                         # Размеры ячейки в пикселях (коэффициенты для преобразования)
                         cell_width_px = cell_width * 7  # Преобразуем ширину в пиксели
-                        cell_height_px = cell_height * 1.5  # Преобразуем высоту в пиксели
+                        cell_height_px = cell_height * 1.35  # Преобразуем высоту в пиксели
 
                         # Сохраняем пропорции: подгоняем изображение, чтобы оно вписалось в ячейку
                         scale_factor = min(cell_width_px / img_width, cell_height_px / img_height)
@@ -160,8 +160,7 @@ try:
                         # Удаляем временный файл после использования
                         os.remove(temp_image_path)
                 except PermissionError:
-                    print(f"ОШИБКА: Отказано в доступе к изображению: {image_path}")
-                    print("Проверьте права доступа к файлу.")
+                    pass
                 except Exception as e:
                     print(f"ОШИБКА при обработке изображения {image_path}: {e}")
             else:
