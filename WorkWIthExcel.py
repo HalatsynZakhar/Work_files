@@ -5,14 +5,37 @@ import os
 # Настройки
 output_sheet = "Processed Data"
 keywords = [
-    'Живлення',
+    'вік',
+    'Років',
 ]
+
+# === НОВЫЙ БЛОК ГЕНЕРАЦИИ КЛЮЧЕВЫХ СЛОВ ===
+# Создаем расширенный список ключевых слов с разными регистрами
+all_keywords = []
+for keyword in keywords:
+    # Генерируем все варианты
+    variations = {
+        keyword,  # Оригинальный регистр
+        keyword.lower(),
+        keyword.upper(),
+        keyword.title(),
+        ' '.join([w.capitalize() for w in keyword.split()])  # Каждое слово с заглавной
+    }
+    # Добавляем специфические комбинации для многословных ключей
+    if ' ' in keyword:
+        words = keyword.split()
+        variations.add(words[0].capitalize() + ' ' + ' '.join(words[1:]).lower())
+    all_keywords.extend(variations)
+
+# Удаляем дубликаты и обновляем основной список
+keywords = list(set(all_keywords))
+# =========================================
 
 # Режимы обработки
 MODES = {
     1: "Только числа (числовой формат)",
     2: "Текст без ключевых слов",
-    3: "Текст без ключевых слов и без символов",  # Новый режим
+    3: "Текст без ключевых слов и без символов",
     4: "Текст с ключевыми словами",
     5: "Текст с ключевыми словами без символов",
     6: "Вся строка без символов",
@@ -21,16 +44,13 @@ MODES = {
 
 # Функция для извлечения чисел из строки
 def extract_numbers(text):
-    # Разбиваем текст на пункты по маркерам • или переносам строк
     items = re.split(r'[\n•]', text)
     numbers = []
 
     for item in items:
-        # Проверяем наличие ключевых слов
+        # Теперь проверяем все сгенерированные варианты ключевых слов
         if any(keyword in item for keyword in keywords):
-            # Извлекаем все числа (включая десятичные)
             found = re.findall(r'(\d+([.,]\d+)?)', item)
-            # Преобразуем в числа с точкой
             nums = [num[0].replace(',', '.') for num in found]
             numbers.extend(nums)
 
@@ -38,13 +58,13 @@ def extract_numbers(text):
 
 
 # Функция для очистки текста в зависимости от режима
-def clean_text(text, mode, keyword=None):
-    if mode == 2 or mode == 3:
-        # Убираем ключевые слова
+def clean_text(text, mode):
+    if mode in [2, 3]:
+        # Удаляем все варианты ключевых слов
         for kw in keywords:
             text = text.replace(kw, '').strip()
-    if mode == 3 or mode == 5 or mode == 6:
-        # Убираем специальные символы
+
+    if mode in [3, 5, 6]:
         text = re.sub(r'[^\w\s]', '', text).strip()
     return text.strip()
 
