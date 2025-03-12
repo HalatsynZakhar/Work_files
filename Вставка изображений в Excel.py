@@ -6,6 +6,7 @@ import re
 import sys
 from pathlib import Path
 
+
 # Функция для проверки существования пути
 def check_path(path, is_folder=False):
     path_obj = Path(path)
@@ -19,17 +20,19 @@ def check_path(path, is_folder=False):
         print(f"ОШИБКА: Указанный путь не является файлом: {path}")
         sys.exit(1)
 
+
 # Путь к папке с изображениями
 folder_path = "C:/Users/ABM/Desktop/Image_1c/"
 # Путь к существующему файлу Excel
-file_path = r"C:\Users\ABM\Desktop\Таблиця хааркеристик.xlsx"
+file_path = r"C:\Users\ABM\Desktop\Шаблон.xlsx"
 # Проверяем существование путей
 check_path(folder_path, is_folder=True)
 check_path(file_path, is_folder=False)
 # Выбор исходной ячейки (столбец с именами изображений)
-input_column = 'B'  # Входной столбец с именами изображений
+input_column = 'E'  # Входной столбец с именами изображений
 # Выбор целевой ячейки (столбец, куда будут вставляться изображения)
 output_column = 'A'  # Столбец, в который вставляются изображения
+
 
 # Функция для нормализации имен (удаление пробелов и символов, приведение к нижнему регистру)
 def normalize_name(name):
@@ -37,6 +40,7 @@ def normalize_name(name):
         return ""
     # Удаляем все символы, кроме букв и цифр, и приводим к нижнему регистру
     return re.sub(r'[^a-zA-Z0-9а-яА-Я]', '', str(name)).lower()
+
 
 # Функция для удаления фона изображения
 def remove_background(image_path, output_path, threshold=240):
@@ -62,6 +66,7 @@ def remove_background(image_path, output_path, threshold=240):
         print(f"ОШИБКА при удалении фона изображения {image_path}: {e}")
         return None
 
+
 # Попытка открыть файл
 try:
     wb = openpyxl.load_workbook(file_path)
@@ -83,7 +88,7 @@ start_row = 2  # Начальная строка для обработки
 file_dict = {}
 try:
     for filename in os.listdir(folder_path):
-        if filename.lower().endswith(('.jpg', '.jpeg', '.png')):
+        if filename.lower().endswith(('.jpg', '.jpeg', '.png')):  # Проверяем расширение файлов
             name_without_ext = os.path.splitext(filename)[0]
             normalized_name = normalize_name(name_without_ext)
             file_dict[normalized_name] = filename
@@ -167,18 +172,27 @@ try:
                 print(f"Изображение для '{cell_value}' не найдено в папке: {folder_path}")
         else:
             print(f"В ячейке {input_column}{row} нет имени изображения.")
-    # Сохраняем файл Excel
+
+    # Определяем новый путь для сохранения файла с добавленным суффиксом
+    file_dir, file_name = os.path.split(file_path)  # Получаем директорию и имя файла
+    new_file_name = os.path.splitext(file_name)[0] + " with images" + os.path.splitext(file_name)[
+        1]  # Добавляем суффикс
+    new_file_path = os.path.join(file_dir, new_file_name)  # Новый путь к файлу
+
+    # Сохраняем файл Excel с новым именем
     try:
-        wb.save(file_path)
-        print(f"Файл успешно сохранен: {file_path}")
+        wb.save(new_file_path)
+        print(f"Файл успешно сохранен: {new_file_path}")
     except PermissionError:
-        print(f"ОШИБКА: Невозможно сохранить файл {file_path}.")
+        print(f"ОШИБКА: Невозможно сохранить файл {new_file_path}.")
         print("Файл может быть открыт в другой программе. Закройте Excel и попробуйте снова.")
         sys.exit(1)
     except Exception as e:
         print(f"ОШИБКА при сохранении файла: {e}")
         sys.exit(1)
+
 except Exception as e:
     print(f"ОШИБКА при выполнении программы: {e}")
     sys.exit(1)
+
 print("Работа программы завершена.")
