@@ -1,468 +1,603 @@
 import os
 import math
-from PIL import Image, ImageChops
+# Переконайтесь, що Pillow встановлено: pip install Pillow
+from PIL import Image, ImageChops, UnidentifiedImageError, ImageFile
+# Переконайтесь, що natsort встановлено: pip install natsort
 from natsort import natsorted
 import traceback # Для детальних помилок
+import sys # Для перевірки бібліотек
+import shutil # Для копіювання файлів (резервне копіювання)
 
-# --- Константи ---
-# Допуск для білого, відсоток полів та відступ для перевірки периметра
-# визначаються внизу, у налаштуваннях
+# --- Перевірка наявності бібліотек ---
+try: import PIL;
+except ImportError: print("Помилка: Pillow не знайдена."); sys.exit(1)
+try: import natsort;
+except ImportError: print("Помилка: natsort не знайдена."); sys.exit(1)
 # --- ---
 
+ImageFile.LOAD_TRUNCATED_IMAGES = True
+
 # --- Функції обробки зображення ---
+# (whiten_image_by_darkest_perimeter, remove_white_background,
+# crop_transparent_border, add_padding, check_perimeter_is_white -
+# залишаються без змін з попередньої версії)
+
+def whiten_image_by_darkest_perimeter(img):
+    """
+    Відбілює зображення, використовуючи найтемніший піксель ПЕРИМЕТРУ
+    (1px рамка) як референс для білого.
+    Працює з копією зображення.
+    """
+    print("    - Функція відбілювання (за пікселем периметру)...")
+    img_copy = img.copy(); original_mode = img_copy.mode
+    has_alpha = 'A' in img_copy.getbands(); alpha_channel = None; img_rgb = None
+    try:
+        if original_mode == 'RGBA' and has_alpha:
+            split_bands = img_copy.split();
+            if len(split_bands) == 4: alpha_channel = split_bands[3]; img_rgb = img_copy.convert('RGB')
+            else: raise ValueError(f"Очікувалось 4 канали в RGBA, отримано {len(split_bands)}")
+        elif original_mode != 'RGB': img_rgb = img_copy.convert('RGB')
+        else: img_rgb = img_copy
+    except Exception as e: print(f"      ! Помилка підготовки до відбілювання: {e}. Скасовано."); return img
+
+    width, height = img_rgb.size
+    if width <= 1 or height <= 1: print("      ! Зображення замале. Скасовано."); return img
+
+    darkest_pixel_rgb = None; min_sum = float('inf'); pixels = None
+    try:
+        pixels = img_rgb.load()
+        def check_pixel(x, y):
+            nonlocal min_sum, darkest_pixel_rgb; pixel = pixels[x, y]
+            if isinstance(pixel, (tuple, list)) and len(pixel) >= 3:
+                r, g, b = pixel[:3]
+                if all(isinstance(val, int) for val in (r, g, b)):
+                    current_sum = r + g + b
+                    if current_sum < min_sum: min_sum = current_sum; darkest_pixel_rgb = (r, g, b)
+        for x in range(width):
+            check_pixel(x, 0);
+            if height > 1: check_pixel(x, height - 1)
+        for y in range(1, height - 1):
+            check_pixel(0, y);
+            if width > 1: check_pixel(width - 1, y)
+    except Exception as e: print(f"      ! Помилка доступу до пікселів: {e}. Скасовано."); return img
+
+    if darkest_pixel_rgb is None: print("      ! Не знайдено валідних пікселів периметру. Скасовано."); return img
+    ref_r, ref_g, ref_b = darkest_pixel_rgb; print(f"      - Референс: R={ref_r}, G={ref_g}, B={ref_b}")
+    if ref_r == 255 and ref_g == 255 and ref_b == 255: print("      - Відбілювання не потрібне."); return img
+
+    scale_r = 255.0 / max(1, ref_r); scale_g = 255.0 / max(1, ref_g); scale_b = 255.0 / max(1, ref_b)
+    print(f"      - Множники: R*={scale_r:.3f}, G*={scale_g:.3f}, B*={scale_b:.3f}")
+    lut_r = bytes([min(255, int(i * scale_r)) for i in range(256)]); lut_g = bytes([min(255, int(i * scale_g)) for i in range(256)]); lut_b = bytes([min(255, int(i * scale_b)) for i in range(256)])
+
+    # --- ВИПРАВЛЕННЯ ПОМИЛКИ UnboundLocalError ---
+    img_whitened_rgb = None
+    out_r, out_g, out_b = None, None, None # Ініціалізуємо перед try
+    try:
+        if img_rgb is None: raise ValueError("img_rgb is None")
+        r_ch, g_ch, b_ch = img_rgb.split()
+        out_r = r_ch.point(lut_r) # Присвоюємо значення
+        out_g = g_ch.point(lut_g) # Присвоюємо значення
+        out_b = b_ch.point(lut_b) # Присвоюємо значення
+
+        # Злиття відбувається тільки якщо всі попередні кроки успішні
+        img_whitened_rgb = Image.merge('RGB', (out_r, out_g, out_b))
+
+    except Exception as e:
+        print(f"      ! Помилка застосування LUT/злиття: {e}. Скасовано.")
+        # У випадку помилки повертаємо оригінальну копію
+        # img_whitened_rgb залишиться None, і функція поверне img (копію оригіналу)
+        return img
+    # --- КІНЕЦЬ ВИПРАВЛЕННЯ ---
+
+    if alpha_channel:
+        try:
+            # Перевіряємо, чи img_whitened_rgb було успішно створено
+            if img_whitened_rgb:
+                 img_whitened_rgb.putalpha(alpha_channel)
+                 return img_whitened_rgb
+            else: # Якщо відбілювання скасовано через помилку LUT/merge
+                 return img # Повертаємо оригінал (копію)
+        except Exception as e:
+             print(f"      ! Помилка відновлення альфа: {e}. Повернення RGB.")
+             return img_whitened_rgb if img_whitened_rgb else img # Повертаємо або результат RGB, або оригінал
+    else:
+        # Якщо альфи не було, повертаємо результат RGB або оригінал, якщо була помилка
+        return img_whitened_rgb if img_whitened_rgb else img
+
 def remove_white_background(img, tolerance):
-    """Видаляє майже білий фон з зображення RGBA."""
     if img.mode != 'RGBA':
-        img = img.convert('RGBA')
-    datas = img.getdata()
-    newData = []
-    cutoff = 255 - tolerance
-    for item in datas:
-        # Перевіряємо перші три канали (RGB)
-        if item[0] >= cutoff and item[1] >= cutoff and item[2] >= cutoff:
-            # Якщо піксель білий (з допуском), робимо його прозорим
-            newData.append((item[0], item[1], item[2], 0))
-        else:
-            # Інакше зберігаємо піксель як є
-            newData.append(item)
-    img.putdata(newData)
-    return img
+        try: img_rgba = img.convert('RGBA')
+        except Exception as e: print(f"  ! Помилка convert->RGBA в remove_bg: {e}"); return img
+    else: img_rgba = img.copy()
+    datas = img_rgba.getdata(); newData = []; cutoff = 255 - tolerance
+    try:
+        for item in datas:
+            if len(item) == 4 and item[0] >= cutoff and item[1] >= cutoff and item[2] >= cutoff: newData.append((*item[:3], 0))
+            else: newData.append(item)
+        if len(newData) == img_rgba.width * img_rgba.height: img_rgba.putdata(newData)
+        else: print(f"  ! Помилка розміру даних в remove_bg"); return img_rgba.copy()
+    except Exception as e: print(f"  ! Помилка putdata в remove_bg: {e}"); return img_rgba.copy()
+    return img_rgba
 
 def crop_transparent_border(img):
-    """Обрізає прозорий простір навколо зображення (потребує RGBA)."""
-    if img.mode != 'RGBA':
-        img = img.convert('RGBA')
-    try:
-        # Використовуємо альфа-канал для визначення меж об'єкта
-        alpha = img.split()[-1]
-        bbox = alpha.getbbox() # Знаходить прямокутник, що містить непрозорі пікселі
-    except (ValueError, IndexError):
-        bbox = None # Може статися, якщо альфа-каналу немає або він порожній
-    if bbox:
-        return img.crop(bbox) # Обрізаємо зображення за знайденими межами
-    else:
-        # Якщо межі не знайдено (зображення повністю прозоре або помилка),
-        # повертаємо зображення як є
-        return img
+    if img.mode != 'RGBA': print("  ! Попередження: crop очікує RGBA."); return img
+    try: bbox = img.getbbox()
+    except Exception: bbox = None
+    if bbox and bbox[0] < bbox[2] and bbox[1] < bbox[3]:
+        try: return img.crop(bbox)
+        except Exception as e: print(f"  ! Помилка img.crop({bbox}): {e}"); return img
+    return img
 
 def add_padding(img, percent):
-    """Додає прозорі поля навколо RGBA зображення."""
-    if img is None:
-        print("  ! Помилка: Немає зображення для додавання полів.")
-        return None
-    if percent <= 0:
-        return img # Поля нульові або від'ємні - нічого не робимо
-
-    width, height = img.size
-    if width == 0 or height == 0:
-        print("  ! Попередження: Розмір зображення нульовий, неможливо додати поля.")
-        return img # Немає сенсу додавати поля до порожнього зображення
-
-    # Визначаємо довший бік для розрахунку відступу
-    longest_side = max(width, height)
-    # Розраховуємо відступ у пікселях
-    padding_pixels = int(longest_side * (percent / 100.0))
-
-    # Якщо відступ виявився нульовим (наприклад, через малий розмір і малий відсоток)
-    if padding_pixels == 0:
-         print("  - Поля: Розрахований відступ = 0 пікселів, поля не додаються.")
-         return img
-
-    new_width = width + 2 * padding_pixels
-    new_height = height + 2 * padding_pixels
-
-    # Створюємо нове прозоре зображення більшого розміру
-    padded_img = Image.new('RGBA', (new_width, new_height), (0, 0, 0, 0))
-    # Визначаємо координати для вставки вихідного зображення
-    paste_x = padding_pixels
-    paste_y = padding_pixels
-    # Вставляємо вихідне зображення в центр нового (використовуючи його маску)
-    padded_img.paste(img, (paste_x, paste_y), img if img.mode == 'RGBA' else None)
+    if img is None or percent <= 0: return img
+    w, h = img.size; pp = int(max(w, h) * (percent / 100.0))
+    if w == 0 or h == 0 or pp == 0: return img
+    nw, nh = w + 2*pp, h + 2*pp
+    if img.mode != 'RGBA':
+        try: img_rgba = img.convert('RGBA')
+        except Exception as e: print(f"  ! Помилка convert->RGBA в add_padding: {e}"); return img
+    else: img_rgba = img
+    padded_img = Image.new('RGBA', (nw, nh), (0,0,0,0))
+    try: padded_img.paste(img_rgba, (pp, pp), img_rgba)
+    except Exception as e: print(f"  ! Помилка paste в add_padding: {e}"); return img_rgba
     return padded_img
 
 def check_perimeter_is_white(img, tolerance, margin):
-    """
-    Перевіряє, чи всі пікселі по периметру зображення (з відступом margin)
-    є білими (з урахуванням tolerance).
-
-    Args:
-        img (PIL.Image.Image): Вхідне зображення (перед обробкою).
-        tolerance (int): Допуск для білого (0-255).
-        margin (int): Відступ від краю в пікселях для перевірки.
-
-    Returns:
-        bool: True, якщо весь периметр в межах відступу білий, False інакше.
-    """
-    if margin <= 0:
-        print("  - Перевірка периметра: Відступ <= 0, перевірка не потрібна.")
-        return False # Якщо відступ 0, вважаємо, що перевірка не пройшла (поля не потрібні)
-
+    if margin <= 0: return False
     try:
-        # Конвертуємо до RGB для спрощення перевірки пікселів
-        # Робимо копію, щоб не змінити оригінал для наступних кроків
-        img_rgb = img.convert('RGB')
-        width, height = img_rgb.size
-        pixels = img_rgb.load() # Швидший доступ до пікселів
-    except Exception as e:
-        print(f"  ! Помилка конвертації в RGB для перевірки периметра: {e}")
-        return False # Не можемо перевірити, вважаємо, що не білий
-
-    # Перевіряємо, чи зображення достатньо велике для заданого відступу
-    if width < margin * 2 or height < margin * 2:
-        # Якщо зображення занадто мале для повного периметру з відступом,
-        # перевіряємо всі пікселі, які є.
-         print(f"  - Перевірка периметра: Зображення ({width}x{height}) менше за подвійний відступ ({margin*2}). Перевірка всього зображення.")
-         margin_w = min(width // 2, margin) # Адаптуємо горизонтальний відступ
-         margin_h = min(height // 2, margin) # Адаптуємо вертикальний відступ
-         if margin_w == 0: margin_w = 1 # Треба хоч 1 піксель по ширині
-         if margin_h == 0: margin_h = 1 # Треба хоч 1 піксель по висоті
-    else:
-         margin_w = margin
-         margin_h = margin
-
+        if img.mode != 'RGB': img_rgb = img.convert('RGB')
+        else: img_rgb = img.copy()
+        width, height = img_rgb.size; pixels = img_rgb.load()
+    except Exception as e: print(f"  ! Помилка підготовки check_perimeter: {e}"); return False
+    mh = min(margin, height // 2 if height > 1 else 0); mw = min(margin, width // 2 if width > 1 else 0)
+    if mh == 0 and height > 0: mh = 1
+    if mw == 0 and width > 0: mw = 1
+    if mh == 0 or mw == 0: return False
     cutoff = 255 - tolerance
-
-    # Перевірка верхніх рядків (0 до margin_h-1)
-    for y in range(margin_h):
-        for x in range(width):
-            r, g, b = pixels[x, y]
-            if r < cutoff or g < cutoff or b < cutoff:
-                print(f"  - Перевірка периметра: Знайдено не-білий піксель зверху ({x},{y}): {r},{g},{b}")
-                return False
-
-    # Перевірка нижніх рядків (height-margin_h до height-1)
-    for y in range(height - margin_h, height):
-        for x in range(width):
-            r, g, b = pixels[x, y]
-            if r < cutoff or g < cutoff or b < cutoff:
-                print(f"  - Перевірка периметра: Знайдено не-білий піксель знизу ({x},{y}): {r},{g},{b}")
-                return False
-
-    # Перевірка лівих стовпців (0 до margin_w-1), уникаючи кутів, вже перевірених
-    for x in range(margin_w):
-        # Перевіряємо від margin_h до height-margin_h, щоб не чіпати кути двічі
-        for y in range(margin_h, height - margin_h):
-            r, g, b = pixels[x, y]
-            if r < cutoff or g < cutoff or b < cutoff:
-                print(f"  - Перевірка периметра: Знайдено не-білий піксель зліва ({x},{y}): {r},{g},{b}")
-                return False
-
-    # Перевірка правих стовпців (width-margin_w до width-1), уникаючи кутів
-    for x in range(width - margin_w, width):
-        # Перевіряємо від margin_h до height-margin_h
-        for y in range(margin_h, height - margin_h):
-            r, g, b = pixels[x, y]
-            if r < cutoff or g < cutoff or b < cutoff:
-                print(f"  - Перевірка периметра: Знайдено не-білий піксель справа ({x},{y}): {r},{g},{b}")
-                return False
-
-    # Якщо всі перевірки пройшли
-    print("  - Перевірка периметра: Весь периметр в межах відступу білий.")
+    try:
+        def is_white(x,y): p=pixels[x,y]; return isinstance(p,(tuple,list)) and len(p)>=3 and p[0]>=cutoff and p[1]>=cutoff and p[2]>=cutoff
+        for y in range(mh):
+            for x in range(width):
+                if not is_white(x,y): return False
+        for y in range(height - mh, height):
+            for x in range(width):
+                if not is_white(x,y): return False
+        for x in range(mw):
+            for y in range(mh, height - mh):
+                 if not is_white(x,y): return False
+        for x in range(width - mw, width):
+            for y in range(mh, height - mh):
+                 if not is_white(x,y): return False
+    except Exception as e: print(f"  ! Помилка циклу check_perimeter: {e}"); return False
+    # print("  - Перевірка периметра: Весь периметр білий.") # Debug
     return True
 # --- Кінець функцій обробки ---
 
 
-def rename_and_convert_images(folder_path, article_name, white_tolerance, padding_percent, perimeter_margin):
-    print(f"Обробка папки: {folder_path}")
-    print(f"Артикул для перейменування: {article_name}")
-    print(f"Допуск для білого фону: {white_tolerance}")
-    print(f"Відсоток полів (якщо додаються): {padding_percent}%")
-    print(f"Відступ для перевірки периметра: {perimeter_margin} пікселів")
-    print("-" * 20)
+# --- ОНОВЛЕНА Основна функція обробки та перейменування ---
+def rename_and_convert_images(
+        input_path,                 # Папка ДЖЕРЕЛА (тільки читання)
+        output_path,                # Папка РЕЗУЛЬТАТІВ (запис/перезапис)
+        article_name,               # Артикул (або None для вимкнення перейменування)
+        delete_originals,           # Прапорець: True - видаляти оригінали, False - ні
+        preresize_width,            # Ширина для попереднього ресайзу (0 = вимк.)
+        preresize_height,           # Висота для попереднього ресайзу (0 = вимк.)
+        enable_whitening,           # Чи вмикати відбілювання?
+        white_tolerance,            # Допуск для білого (або None для вимкнення видалення фону)
+        perimeter_margin,           # Відступ для перевірки периметра
+        padding_percent,            # Відсоток полів
+        final_resize_width,         # Бажана ширина фінальна (0 = вимк.)
+        final_resize_height,        # Бажана висота фінальна (0 = вимк.)
+        backup_folder_path=None,    # Папка для резервних копій (опціонально)
+    ):
+    """
+    Обробляє зображення з input_path, зберігає в output_path.
+    Опціонально: бекапить, пре-ресайзить, відбілює, видаляє фон/обрізає,
+    додає поля, фінально ресайзить, перейменовує, видаляє оригінали.
+    """
+    print(f"--- Параметри обробки ---")
+    print(f"Папка ДЖЕРЕЛА: {input_path}")
+    print(f"Папка РЕЗУЛЬТАТІВ: {output_path}")
+
+    if not os.path.isdir(output_path):
+        try: os.makedirs(output_path); print(f"  - Створено папку результатів.")
+        except Exception as e: print(f"!! ПОМИЛКА створення папки '{output_path}': {e}. СКАСОВАНО."); return
+    elif not os.path.exists(output_path): print(f"!! ПОМИЛКА: Шлях '{output_path}' існує, але не є папкою. СКАСОВАНО."); return
+
+    enable_renaming_actual = bool(article_name and article_name.strip())
+    if enable_renaming_actual: print(f"Артикул (для перейменування): {article_name}")
+    else: print(f"Перейменування за артикулом: Вимкнено")
+    print(f"Видалення оригіналів з '{input_path}': {'Так' if delete_originals else 'Ні'}")
+    perform_preresize = preresize_width > 0 and preresize_height > 0
+    if perform_preresize: print(f"Попередній ресайз: Так ({preresize_width}x{preresize_height}px)")
+    else: print(f"Попередній ресайз: Ні")
+    print(f"Відбілювання (периметр): {'Увімкнено' if enable_whitening else 'Вимкнено'}")
+    enable_bg_removal = white_tolerance is not None
+    if enable_bg_removal: print(f"Видалення білого фону: Так (допуск {white_tolerance})")
+    else: print(f"Видалення білого фону: Ні")
+    print(f"Перевірка периметра (поля): {perimeter_margin}px")
+    print(f"Відсоток полів (якщо треба): {padding_percent}%")
+    perform_final_resize = final_resize_width > 0 and final_resize_height > 0
+    if perform_final_resize: print(f"Фінальний ресайз: Так ({final_resize_width}x{final_resize_height}px)")
+    else: print(f"Фінальний ресайз: Ні")
+    if backup_folder_path:
+        print(f"Резервне копіювання: Увімкнено ({backup_folder_path})")
+        if not os.path.exists(backup_folder_path):
+            try: os.makedirs(backup_folder_path); print(f"  - Створено папку бекапів.")
+            except Exception as e: print(f"!! Помилка створення папки бекапів: {e}")
+    else: print(f"Резервне копіювання: Вимкнено")
+    print("-" * 25)
 
     try:
-        files = natsorted([f for f in os.listdir(folder_path) if os.path.isfile(os.path.join(folder_path, f))])
-        print(f"Знайдено файлів для обробки: {len(files)}")
-    except FileNotFoundError:
-        print(f"Помилка: Папку не знайдено - {folder_path}")
-        return
-    except Exception as e:
-        print(f"Помилка при читанні вмісту папки {folder_path}: {e}")
-        return
+        all_entries = os.listdir(input_path)
+        files = natsorted([f for f in all_entries if os.path.isfile(os.path.join(input_path, f)) and not f.startswith("__temp_")])
+        print(f"Знайдено файлів для аналізу в '{input_path}': {len(files)}")
+    except FileNotFoundError: print(f"Помилка: Папку ДЖЕРЕЛА не знайдено - {input_path}"); return
+    except Exception as e: print(f"Помилка читання папки {input_path}: {e}"); return
 
-    processed_files_count = 0
-    original_files_to_remove = [] # Список для файлів, які потрібно буде видалити
+    processed_files_count = 0; skipped_files_count = 0; error_files_count = 0
+    source_files_to_potentially_delete = [] # Шляхи до ОРИГІНАЛІВ
+    processed_output_file_map = {}          # Словник: шлях_до_обробленого_файлу -> оригінальне_ім'я_без_розширення
+    SUPPORTED_EXTENSIONS = ('.png', '.jpg', '.jpeg', '.bmp', '.gif', '.tiff', '.webp')
 
     for file in files:
-        file_path = os.path.join(folder_path, file)
+        source_file_path = os.path.join(input_path, file) # Шлях до оригіналу
+        if not file.lower().endswith(SUPPORTED_EXTENSIONS):
+             skipped_files_count += 1; continue
+
         print(f"\nОбробка файлу: {file}")
+        img_current = None; img_to_save = None; success_flag = False
         try:
-            with Image.open(file_path) as img_original:
-                original_mode = img_original.mode
-                original_size = img_original.size
-                print(f"  - Початковий режим: {original_mode}, Розмір: {original_size}")
+            # 1. Бекап
+            if backup_folder_path:
+                backup_file_path = os.path.join(backup_folder_path, file)
+                try: shutil.copy2(source_file_path, backup_file_path);
+                except Exception as backup_err: print(f"  !! Помилка бекапу: {backup_err}")
 
-                # --- ІНТЕГРОВАНА ОБРОБКА З УМОВНИМИ ПОЛЯМИ ---
+            # 2. Відкриття
+            with Image.open(source_file_path) as img_original_loaded: img_original_loaded.load(); img_current = img_original_loaded.copy()
+            print(f"  - Ориг. розмір: {img_current.size}")
 
-                # * ПЕРЕВІРКА ПЕРИМЕТРА (на оригінальному зображенні) *
-                print(f"  - Крок 0: Перевірка периметра (відступ {perimeter_margin}px, допуск {white_tolerance})...")
-                # Робимо копію перед перевіркою, щоб оригінал залишився недоторканим для подальшої обробки
-                should_add_padding = check_perimeter_is_white(img_original.copy(), white_tolerance, perimeter_margin)
+            # 2.1 Перед. ресайз (опц.)
+            if perform_preresize and img_current.size != (preresize_width, preresize_height):
+                print(f"  - Крок 0: Перед. ресайз до {preresize_width}x{preresize_height}...")
+                ow, oh = img_current.size
+                if ow > 0 and oh > 0:
+                    ratio = min(preresize_width / ow, preresize_height / oh); nw, nh = max(1, int(ow * ratio)), max(1, int(oh * ratio))
+                    try:
+                        resized_content = img_current.resize((nw, nh), Image.Resampling.LANCZOS)
+                        pr_canvas = Image.new('RGB', (preresize_width, preresize_height), (255, 255, 255))
+                        x, y = (preresize_width - nw)//2, (preresize_height - nh)//2
+                        if resized_content.mode == 'RGBA': pr_canvas.paste(resized_content, (x, y), resized_content)
+                        else: pr_canvas.paste(resized_content, (x, y))
+                        img_current = pr_canvas; print(f"    - Новий розмір: {img_current.size}")
+                    except Exception as pr_err: print(f"   ! Помилка перед. ресайзу: {pr_err}")
 
-                # 1. Завжди конвертуємо в RGBA для видалення фону та обрізки
-                print(f"  - Крок 1: Конвертація в RGBA...")
-                img_rgba = img_original.convert("RGBA")
+            # 3. Відбілювання (опц.)
+            if enable_whitening:
+                print("  - Крок 1: Відбілювання...")
+                try: img_whitened = whiten_image_by_darkest_perimeter(img_current); img_current = img_whitened
+                except Exception as wh_err: print(f"  !! Помилка відбілювання: {wh_err}")
 
-                # 2. Видалення білого фону
-                print(f"  - Крок 2: Видалення білого фону (допуск {white_tolerance})...")
-                img_no_bg = remove_white_background(img_rgba, white_tolerance)
+            # 4. Перевірка периметра
+            # print("  - Крок 2: Перевірка периметра...") # Менше логування
+            should_add_padding = check_perimeter_is_white(img_current, white_tolerance if enable_bg_removal else 0, perimeter_margin)
 
-                # 3. Обрізка прозорих країв
-                print("  - Крок 3: Обрізка прозорих країв...")
-                img_cropped = crop_transparent_border(img_no_bg)
-
-                if img_cropped is None or not img_cropped.getbbox():
-                    print("  ! Попередження: Зображення стало порожнім після видалення фону/обрізки. Пропуск.")
-                    continue
-                print(f"  - Розмір після обрізки: {img_cropped.size}")
-
-                # 4. Додавання полів (Padding) - УМОВНО
-                img_processed_before_resize = None # Змінна для результату цього кроку
-                if should_add_padding and padding_percent > 0:
-                    print(f"  - Крок 4: Додавання полів ({padding_percent}%)... (Периметр був білим)")
-                    img_padded = add_padding(img_cropped, padding_percent)
-                    if img_padded is None:
-                         print("  ! Помилка при додаванні полів. Пропуск.")
-                         continue
-                    print(f"  - Розмір після додавання полів: {img_padded.size}")
-                    img_processed_before_resize = img_padded
+            # 5, 6: Видалення фону та обрізка (опц.)
+            img_after_bg_processing = None
+            if enable_bg_removal:
+                # print(f"  - Крок 3: Видалення фону...") # Менше логування
+                try: img_rgba = img_current.convert('RGBA') if img_current.mode!='RGBA' else img_current
+                except Exception as e: print(f"  !! Помилка convert->RGBA для фону: {e}"); img_after_bg_processing = img_current
                 else:
-                    if not should_add_padding:
-                         print(f"  - Крок 4: Поля не додаються (периметр не був білим або відступ 0).")
-                    elif padding_percent <= 0:
-                         print(f"  - Крок 4: Поля не додаються (відсоток полів <= 0).")
-                    img_processed_before_resize = img_cropped # Використовуємо обрізане зображення без полів
+                    img_no_bg = remove_white_background(img_rgba, white_tolerance)
+                    # print("  - Крок 4: Обрізка країв...") # Менше логування
+                    img_cropped = crop_transparent_border(img_no_bg)
+                    if img_cropped is None or img_cropped.size[0]==0: print(f"   ! Порожнє після обрізки."); skipped_files_count += 1; continue
+                    img_after_bg_processing = img_cropped
+            else: # print("  - Кроки 3, 4: Видалення фону/обрізка вимкнені."); # Менше логування
+                  img_after_bg_processing = img_current
+            if img_after_bg_processing is None or img_after_bg_processing.size[0]==0: print(f"   ! Помилка після обробки фону."); skipped_files_count += 1; continue
 
-                # 5. Конвертація в RGB з білим фоном
-                print("  - Крок 5: Конвертація в RGB (заміна прозорості на білий)...")
-                final_rgb_img = Image.new("RGB", img_processed_before_resize.size, (255, 255, 255))
-                try:
-                     if 'A' in img_processed_before_resize.getbands():
-                          mask = img_processed_before_resize.split()[3]
-                          final_rgb_img.paste(img_processed_before_resize, (0, 0), mask)
-                     else:
-                          final_rgb_img.paste(img_processed_before_resize, (0, 0))
-                except IndexError:
-                     print("  ! Помилка при отриманні альфа-каналу для paste. Спроба прямої конвертації.")
-                     try:
-                         final_rgb_img = img_processed_before_resize.convert("RGB")
-                     except Exception as conv_err:
-                          print(f"  !! Остаточна конвертація в RGB не вдалася: {conv_err}")
-                          continue
+            # 7. Додавання полів (опц.)
+            img_before_final_resize = None
+            if should_add_padding and padding_percent > 0 and perimeter_margin > 0:
+                 # print(f"  - Крок 5: Додавання полів...") # Менше логування
+                 try: img_rgba_pad = img_after_bg_processing.convert('RGBA') if img_after_bg_processing.mode!='RGBA' else img_after_bg_processing
+                 except Exception as e: print(f"  !! Помилка convert->RGBA для полів: {e}"); img_before_final_resize = img_after_bg_processing
+                 else:
+                      img_padded = add_padding(img_rgba_pad, padding_percent)
+                      if img_padded and img_padded.size[0]>0: img_before_final_resize = img_padded
+                      else: print("  ! Помилка додавання полів."); img_before_final_resize = img_after_bg_processing
+            else: img_before_final_resize = img_after_bg_processing
+            if img_before_final_resize.size[0]==0: print("   ! Нульовий розмір перед фіналізацією."); skipped_files_count += 1; continue
 
-                img = final_rgb_img
-                print(f"  - Розмір перед масштабуванням: {img.size}")
-
-                # 6. Зміна розміру до 1500x1500 з центровкою
-                print("  - Крок 6: Масштабування до 1500x1500 з центровкою...")
-                target_size = 1500
-                if img.size != (target_size, target_size):
-                    original_width, original_height = img.size
-
-                    if original_width == 0 or original_height == 0:
-                        print("  ! Попередження: Розмір зображення нульовий перед масштабуванням. Створення порожнього квадрата.")
-                        img = Image.new('RGB', (target_size, target_size), (255, 255, 255))
-                    else:
-                        ratio = min(target_size / original_width, target_size / original_height)
-                        new_width = int(original_width * ratio)
-                        new_height = int(original_height * ratio)
-
-                        if new_width > 0 and new_height > 0:
-                            try:
-                                resized_img = img.resize((new_width, new_height), Image.Resampling.LANCZOS)
-                            except ValueError:
-                                print(f"  ! Помилка при зміні розміру до {new_width}x{new_height}. Можливо, розмір занадто малий.")
-                                resized_img = img
-                                new_width, new_height = img.size
-                        else:
-                             print(f"  ! Попередження: Новий розрахований розмір ({new_width}x{new_height}) некоректний. Пропуск масштабування.")
-                             resized_img = img
-                             new_width, new_height = img.size
-
-                        canvas = Image.new('RGB', (target_size, target_size), (255, 255, 255))
-                        x = (target_size - new_width) // 2
-                        y = (target_size - new_height) // 2
-                        canvas.paste(resized_img, (x, y))
-                        img = canvas
-                else:
-                     print("  - Зображення вже має розмір 1500x1500.")
-
-                # 7. Збереження як JPG (з новим іменем, але без нумерації поки що)
-                # Важливо: Ми зберігаємо з оригінальною назвою + .jpg,
-                # щоб потім коректно перейменувати *всі* jpg файли
-                base_name = os.path.splitext(file)[0]
-                new_temp_filename = f"{base_name}.jpg" # Тимчасове ім'я буде як оригінальне + .jpg
-                new_temp_path = os.path.join(folder_path, new_temp_filename)
-
-                print(f"  - Крок 7: Збереження як тимчасовий JPG: {new_temp_filename}...")
-                img.save(new_temp_path, "JPEG", quality=95, optimize=True)
-                processed_files_count += 1
-
-                # Додаємо оригінальний файл у список на видалення,
-                # *якщо* це не той самий JPG файл, який ми щойно створили/перезаписали
-                if file_path.lower() != new_temp_path.lower():
-                    original_files_to_remove.append(file_path)
-                elif file_path.lower() == new_temp_path.lower():
-                    print(f"  - Оригінальний файл {file} був JPG і був перезаписаний.")
-
-
-        except Exception as e:
-            print(f"!!! Помилка обробки файлу {file}: {e}")
-            traceback.print_exc() # Друкуємо детальний traceback помилки
-            # Якщо помилка була з файлом, який мав бути видалений, прибираємо його зі списку
-            if file_path in original_files_to_remove:
-                try:
-                    original_files_to_remove.remove(file_path)
-                except ValueError:
-                    pass # На випадок, якщо його там чомусь немає
-            continue # Переходимо до наступного файлу
-
-    print(f"\nПопередня обробка завершена. Успішно оброблено/конвертовано файлів: {processed_files_count}")
-
-    # Видалення оригінальних файлів (які не були JPG з тим самим іменем)
-    if original_files_to_remove:
-        print(f"\nВидалення {len(original_files_to_remove)} оригінальних файлів...")
-        for file_to_remove in original_files_to_remove:
+            # 8. Фіналізація в RGB
+            img_ready_for_final_resize = None
+            # print("  - Крок 6: Фіналізація в RGB...") # Менше логування
             try:
-                os.remove(file_to_remove)
-                print(f"  - Видалено: {os.path.basename(file_to_remove)}")
-            except Exception as remove_error:
-                print(f"  ! Помилка при видаленні {os.path.basename(file_to_remove)}: {remove_error}")
+                if img_before_final_resize.mode == 'RGBA':
+                     img_final_rgb = Image.new("RGB", img_before_final_resize.size, (255, 255, 255))
+                     img_final_rgb.paste(img_before_final_resize, (0, 0), img_before_final_resize)
+                elif img_before_final_resize.mode != 'RGB': img_final_rgb = img_before_final_resize.convert('RGB')
+                else: img_final_rgb = img_before_final_resize
+                img_ready_for_final_resize = img_final_rgb
+            except Exception as conv_err: print(f"  !! Помилка фіналізації в RGB: {conv_err}"); raise
 
-    print("\n---")
-    print("Перейменування файлів...")
+            # 9. Фінальний ресайз (опц.)
+            img_to_save = None
+            if perform_final_resize and img_ready_for_final_resize.size != (final_resize_width, final_resize_height):
+                print(f"  - Крок 7: Фінальний ресайз до {final_resize_width}x{final_resize_height}...")
+                ow, oh = img_ready_for_final_resize.size
+                if ow > 0 and oh > 0:
+                    ratio = min(final_resize_width / ow, final_resize_height / oh)
+                    nw, nh = max(1, int(ow * ratio)), max(1, int(oh * ratio))
+                    try:
+                        resized_img = img_ready_for_final_resize.resize((nw, nh), Image.Resampling.LANCZOS)
+                        canvas = Image.new('RGB', (final_resize_width, final_resize_height), (255, 255, 255))
+                        x, y = (final_resize_width - nw) // 2, (final_resize_height - nh) // 2
+                        canvas.paste(resized_img, (x, y))
+                        img_to_save = canvas
+                    except Exception as resize_err: print(f"  ! Помилка фінального ресайзу: {resize_err}"); img_to_save = img_ready_for_final_resize
+                else: img_to_save = img_ready_for_final_resize
+            else: img_to_save = img_ready_for_final_resize
 
-    # Оновлюємо список файлів ТІЛЬКИ JPG після всіх перетворень
-    try:
-        current_files = natsorted([f for f in os.listdir(folder_path) if f.lower().endswith('.jpg') and os.path.isfile(os.path.join(folder_path, f))])
-        print(f"Файлів для перейменування (JPG): {len(current_files)}")
-    except Exception as e:
-         print(f"Помилка при отриманні списку JPG файлів для перейменування: {e}")
-         return # Немає сенсу продовжувати без списку файлів
+            # 10. Збереження РЕЗУЛЬТАТУ в output_path
+            base_name = os.path.splitext(file)[0]
+            output_filename = f"{base_name}.jpg" # ЗАВЖДИ зберігаємо як .jpg на цьому етапі
+            final_output_path = os.path.join(output_path, output_filename) # Повний шлях для збереження
+            print(f"  - Крок 8: Збереження обробленого JPG: {final_output_path}...")
+            try:
+                if img_to_save.mode != 'RGB': img_to_save = img_to_save.convert('RGB')
+                # Перезаписуємо файл у папці output, якщо він вже існує
+                img_to_save.save(final_output_path, "JPEG", quality=95, optimize=True, subsampling=0)
+                processed_files_count += 1
+                success_flag = True
+                # Зберігаємо шлях до результату та оригінальне ім'я для перейменування
+                processed_output_file_map[final_output_path] = base_name
+                # Додаємо ОРИГІНАЛ до списку на можливе видалення
+                if os.path.exists(source_file_path) and source_file_path not in source_files_to_potentially_delete:
+                     source_files_to_potentially_delete.append(source_file_path)
+            except Exception as save_err: print(f"  !! Помилка збереження JPG: {save_err}"); error_files_count += 1; continue
 
-    if not current_files:
-        print("Папка не містить JPG файлів після обробки. Перейменування неможливе.")
-        return
+        # --- Обробка помилок ---
+        except UnidentifiedImageError: print(f"!!! Помилка: Не розпізнано: {file}"); skipped_files_count += 1
+        except FileNotFoundError: print(f"!!! Помилка: Файл не знайдено: {file}"); skipped_files_count += 1
+        except OSError as e: print(f"!!! Помилка ОС ({file}): {e}"); error_files_count += 1
+        except Exception as e:
+            print(f"!!! Неочікувана помилка ({file}): {e}"); traceback.print_exc(); error_files_count += 1
+            if not success_flag and source_file_path in source_files_to_potentially_delete:
+                 try: source_files_to_potentially_delete.remove(source_file_path);
+                 except ValueError: pass
+        finally: # Зачистка
+            if 'img_current' in locals() and img_current:
+                try: img_current.close();
+                except Exception: pass
+            if 'img_to_save' in locals() and img_to_save:
+                try: img_to_save.close();
+                except Exception: pass
 
-    # Логіка перейменування залишається такою самою, вона працює з фінальними JPG
-    exact_match_filename = f"{article_name}.jpg"
-    exact_match_temp_name = None
-    files_to_rename_temp = [] # Список тимчасових шляхів файлів для нумерованого перейменування
-    temp_rename_map = {} # Відстеження оригінал -> тимчасовий
+    print(f"\n--- Статистика обробки ---"); print(f"  - Успішно збережено: {processed_files_count}"); print(f"  - Пропущено/Помилки: {skipped_files_count + error_files_count}")
 
-    print("  - Створення тимчасових імен (захист від конфліктів)...")
-    temp_counter = 0
-    rename_errors = 0
-    for filename in current_files:
-        original_path = os.path.join(folder_path, filename)
-        # Створюємо гарантовано унікальне тимчасове ім'я
-        temp_filename = f"__temp_{temp_counter}_{os.path.basename(filename)}"
-        temp_path = os.path.join(folder_path, temp_filename)
-        try:
-            os.rename(original_path, temp_path)
-            temp_rename_map[original_path] = temp_path # Зберігаємо відповідність
-            # Перевіряємо, чи це був файл, який має стати {article_name}.jpg
-            # Порівнюємо ім'я *до* додавання __temp_
-            if filename.lower() == exact_match_filename.lower():
-                exact_match_temp_name = temp_path
-                print(f"    - {filename} -> {temp_filename} (буде {exact_match_filename})")
-            else:
-                files_to_rename_temp.append(temp_path)
-                print(f"    - {filename} -> {temp_filename} (буде нумерований)")
-            temp_counter += 1
-        except Exception as rename_error:
-            print(f"  ! Помилка перейменування '{filename}' у тимчасове ім'я: {rename_error}")
-            rename_errors += 1
-            # Якщо не вдалося перейменувати, файл залишається зі старим іменем,
-            # і ми не можемо його включити в подальше перейменування
-
-    if rename_errors > 0:
-        print(f"  ! Були помилки ({rename_errors}) при створенні тимчасових імен. Деякі файли можуть бути не перейменовані.")
-
-    print("  - Призначення фінальних імен...")
-    final_rename_counter = 1
-
-    # 1. Перейменовуємо файл, що має стати {article_name}.jpg (якщо він був знайдений)
-    if exact_match_temp_name:
-        final_exact_path = os.path.join(folder_path, exact_match_filename)
-        try:
-            # Перевірка, чи файл з таким іменем вже не існує (малоймовірно, але можливо)
-            if os.path.exists(final_exact_path):
-                 print(f"  ! Попередження: Файл {exact_match_filename} вже існує. Неможливо перейменувати {os.path.basename(exact_match_temp_name)}.")
-                 # Додаємо цей тимчасовий файл до списку для нумерації
-                 files_to_rename_temp.append(exact_match_temp_name)
-            else:
-                 os.rename(exact_match_temp_name, final_exact_path)
-                 print(f"    - '{os.path.basename(exact_match_temp_name)}' -> '{exact_match_filename}'")
-        except Exception as rename_error:
-            print(f"  ! Помилка фінального перейменування для {exact_match_filename} з {os.path.basename(exact_match_temp_name)}: {rename_error}")
-            # Якщо помилка, додаємо назад у список для нумерації
-            files_to_rename_temp.append(exact_match_temp_name)
-
-    # 2. Перейменовуємо решту файлів з нумерацією {article_name}_N.jpg
-    # Сортуємо список тимчасових файлів, щоб забезпечити стабільний порядок нумерації
-    # Використовуємо natsort для природного сортування імен, з яких вони були створені
-    files_to_rename_temp_sorted = natsorted(files_to_rename_temp, key=lambda x: os.path.basename(x).split('_', 2)[-1]) # Сортуємо за оригінальним іменем всередині __temp_..._
-
-    for temp_path in files_to_rename_temp_sorted:
-        # Генеруємо нове нумероване ім'я
-        final_numbered_filename = f"{article_name}_{final_rename_counter}.jpg"
-        final_numbered_path = os.path.join(folder_path, final_numbered_filename)
-
-        # Перевірка на існування файлу перед перейменуванням
-        if os.path.exists(final_numbered_path):
-             print(f"  ! Попередження: Файл {final_numbered_filename} вже існує. Пропуск перейменування {os.path.basename(temp_path)}.")
-             # В теорії, цього не мало б статися через тимчасове перейменування,
-             # але перевірка не завадить. Можна додати логіку пошуку наступного вільного номера.
-             # Поки що просто пропускаємо.
-             continue
-
-        try:
-            os.rename(temp_path, final_numbered_path)
-            print(f"    - '{os.path.basename(temp_path)}' -> '{final_numbered_filename}'")
-            final_rename_counter += 1
-        except Exception as rename_error:
-             print(f"  ! Помилка фінального перейменування для {os.path.basename(temp_path)} -> {final_numbered_filename}: {rename_error}")
-
-    # Перевірка, чи залишилися тимчасові файли (на випадок помилок)
-    remaining_temp_files = [f for f in os.listdir(folder_path) if f.startswith("__temp_") and os.path.isfile(os.path.join(folder_path, f))]
-    if remaining_temp_files:
-        print("\n  ! Увага: Залишилися тимчасові файли після перейменування (можливо через помилки):")
-        for f_temp in remaining_temp_files:
-            print(f"    - {f_temp}")
-
-    print("Перейменування завершено.")
+    # Видалення ОРИГІНАЛІВ з input_path (якщо увімкнено)
+    if delete_originals and source_files_to_potentially_delete:
+        print(f"\nВидалення {len(source_files_to_potentially_delete)} оригінальних файлів з '{input_path}'...")
+        removed_count = 0; remove_errors = 0
+        for file_to_remove in source_files_to_potentially_delete:
+            try:
+                if os.path.exists(file_to_remove): os.remove(file_to_remove); removed_count += 1
+            except Exception as remove_error: print(f"  ! Помилка видалення {os.path.basename(file_to_remove)}: {remove_error}"); remove_errors += 1
+        print(f"  - Видалено: {removed_count}. Помилок: {remove_errors}.")
+    elif not delete_originals: print(f"\nВидалення оригіналів з '{input_path}' вимкнено.")
+    else: print(f"\nНемає оригінальних файлів для видалення.")
 
 
-# --- Приклад використання ---
+    # --- ОНОВЛЕНЕ Перейменування (у папці РЕЗУЛЬТАТІВ output_path) ---
+    if enable_renaming_actual:
+        print(f"\n--- Перейменування файлів у '{output_path}' ---")
+        # Використовуємо список успішно збережених файлів
+        files_to_rename = list(processed_output_file_map.keys())
+        print(f"Файлів для потенційного перейменування: {len(files_to_rename)}")
+
+        if files_to_rename:
+            exact_match_filename_final = f"{article_name}.jpg"
+            exact_match_temp_path = None # Шлях до файлу, який треба перейменувати в exact_match_filename_final
+            files_to_rename_numerically_temp = [] # Список шляхів до файлів для нумерації
+
+            # Розділяємо файли на той, що співпадає з артикулом, і решту
+            for temp_output_path in files_to_rename:
+                 original_basename = processed_output_file_map.get(temp_output_path)
+                 if original_basename and original_basename.lower() == article_name.lower():
+                      if exact_match_temp_path is None: # Знайшли перший
+                           exact_match_temp_path = temp_output_path
+                      else: # Знайшли другий і далі - вони підуть в нумерацію
+                           print(f"  ! Попередження: Знайдено дублікат артикулу для '{os.path.basename(temp_output_path)}'. Буде пронумеровано.")
+                           files_to_rename_numerically_temp.append(temp_output_path)
+                 else:
+                      files_to_rename_numerically_temp.append(temp_output_path)
+
+            # Використовуємо двохетапне перейменування для надійності
+            temp_rename_map_final = {} # temporary_path -> final_path
+            print("  - Крок 1: Перейменування у тимчасові імена...")
+            temp_counter = 0; rename_errors_temp = 0
+            processed_for_temp_rename_final = set() # Щоб уникнути подвійного перейменування
+
+            all_temp_paths = []
+            if exact_match_temp_path: all_temp_paths.append(exact_match_temp_path)
+            all_temp_paths.extend(files_to_rename_numerically_temp)
+
+            for current_path in all_temp_paths:
+                 if current_path in processed_for_temp_rename_final: continue
+                 # Створюємо унікальне тимчасове ім'я в тій же папці output_path
+                 temp_filename = f"__temp_{temp_counter}_{os.path.basename(current_path)}"
+                 temp_path_stage2 = os.path.join(output_path, temp_filename)
+                 try:
+                     os.rename(current_path, temp_path_stage2)
+                     # Зберігаємо відповідність для наступного кроку
+                     temp_rename_map_final[temp_path_stage2] = current_path # Ключ - новий тимчасовий шлях, значення - попередній тимчасовий шлях (__processed_)
+                     processed_for_temp_rename_final.add(temp_path_stage2)
+                     temp_counter += 1
+                 except Exception as rename_error: print(f"  ! Помилка тимч. перейменування '{os.path.basename(current_path)}': {rename_error}"); rename_errors_temp += 1
+            if rename_errors_temp > 0: print(f"  ! Помилок тимчасового перейменування: {rename_errors_temp}")
+
+
+            print("  - Крок 2: Фінальне перейменування...")
+            final_rename_counter = 1; rename_errors_final = 0; renamed_final_count = 0
+
+            # Обробляємо файл артикулу
+            final_exact_path = os.path.join(output_path, exact_match_filename_final)
+            found_temp_exact = None
+            # Шукаємо тимчасовий шлях (__temp_...) для файлу артикулу
+            for temp_s2_path, temp_s1_path in temp_rename_map_final.items():
+                 if exact_match_temp_path and os.path.normcase(temp_s1_path) == os.path.normcase(exact_match_temp_path):
+                      found_temp_exact = temp_s2_path
+                      break
+            if found_temp_exact:
+                 try:
+                      os.rename(found_temp_exact, final_exact_path); renamed_final_count += 1
+                      print(f"    - '{os.path.basename(found_temp_exact)}' -> '{exact_match_filename_final}'")
+                      # Видаляємо зі словника, щоб не обробляти його далі
+                      del temp_rename_map_final[found_temp_exact]
+                 except Exception as rename_error: print(f"  ! Помилка фін. перейм. '{os.path.basename(found_temp_exact)}': {rename_error}"); rename_errors_final += 1
+            elif exact_match_temp_path: # Якщо оригінал був, але не вдалося знайти тимчасовий
+                 print(f"  ! Не вдалося знайти тимчасовий файл для артикулу: {os.path.basename(exact_match_temp_path)}")
+
+
+            # Обробляємо решту файлів (нумеровані)
+            # Сортуємо за оригінальним іменем, яке заховане в тимчасовому імені __temp_...
+            remaining_temp_files = list(temp_rename_map_final.keys())
+            try: sorted_remaining_temp = natsorted(remaining_temp_files, key=lambda x: '_'.join(os.path.basename(x).split('_')[3:]))
+            except Exception as sort_err: print(f"  ! Помилка сортування: {sort_err}"); sorted_remaining_temp = remaining_temp_files
+
+            for temp_path_s2 in sorted_remaining_temp:
+                final_numbered_filename = f"{article_name}_{final_rename_counter}.jpg"
+                final_numbered_path = os.path.join(output_path, final_numbered_filename)
+                try:
+                    os.rename(temp_path_s2, final_numbered_path); renamed_final_count += 1; final_rename_counter += 1
+                    print(f"    - '{os.path.basename(temp_path_s2)}' -> '{final_numbered_filename}'")
+                except Exception as rename_error: print(f"  ! Помилка фін. перейм. '{os.path.basename(temp_path_s2)}': {rename_error}"); rename_errors_final += 1
+
+            print(f"\n  - Перейменовано файлів: {renamed_final_count}. Помилок: {rename_errors_final}.")
+            # Перевірка на залишкові тимчасові файли __temp_...
+            remaining_temp_final = [f for f in os.listdir(output_path) if f.startswith("__temp_")];
+            if remaining_temp_final: print(f"  ! Увага: Залишилися тимчасові файли в '{output_path}': {remaining_temp_final}")
+        else:
+            print("Немає успішно оброблених файлів для перейменування.")
+    else:
+        print("\n--- Перейменування файлів пропущено (вимкнено через налаштування артикулу) ---")
+# --- Кінець функції rename_and_convert_images ---
+
+
+# --- Блок виконання та Налаштування Користувача ---
 if __name__ == "__main__":
-    try:
-        import PIL
-    except ImportError:
-        print("Помилка: Бібліотека Pillow не знайдена.\nВстановіть її: pip install Pillow")
-        exit()
-    try:
-        import natsort
-    except ImportError:
-        print("Помилка: Бібліотека natsort не знайдена.\nВстановіть її: pip install natsort")
-        exit()
 
     # --- Налаштування користувача ---
-    folder_to_process = r"C:\Users\zakhar\Downloads\test2"  # !!! ВАШ шлях до папки
-    article = "TG1018"               # !!! ВАШ артикул
-    tolerance_for_white = 0              # !!! Допуск для білого (0-255), використовується і для фону, і для перевірки периметра
-    padding_percentage = 5                # !!! Відсоток полів (наприклад, 5 для 5%), застосовується ТІЛЬКИ якщо периметр білий
-    perimeter_check_margin_pixels = 1     # !!! ВІДСТУП в пікселях від краю для перевірки на білий колір. Якщо 0, поля НЕ додаються автоматично.
+
+    # === Шляхи до папок ===
+    # Важливо: Використовуйте 'r' перед шляхами у Windows або подвійні '\\'.
+
+    # Папка, де знаходяться ВАШІ ОРИГІНАЛЬНІ зображення.
+    # Скрипт буде тільки ЧИТАТИ з цієї папки (крім випадку, коли delete_originals = True).
+    input_folder_path = r"C:\Users\zakhar\Downloads\test3"  # !!! ВАШ ШЛЯХ ДО ОРИГІНАЛІВ
+
+    # Папка, куди будуть збережені ОБРОБЛЕНІ зображення у форматі JPG.
+    # Якщо папка не існує, скрипт спробує її створити.
+    # Якщо встановити None, буде автоматично створена підпапка 'output_processed'
+    # всередині папки з оригіналами (input_folder_path).
+    output_folder_path = r"C:\Users\zakhar\Downloads\test3" # !!! ВАШ ШЛЯХ або None
+
+    # (Опціонально) Папка для РЕЗЕРВНИХ КОПІЙ оригіналів.
+    # Сюди будуть скопійовані ваші вихідні файли ПЕРЕД обробкою.
+    # Якщо встановити None, резервне копіювання не виконується.
+    backup_folder_path = r"C:\Users\zakhar\Downloads\test_py_bak" # !!! ВАШ ШЛЯХ або None
+
+    # === Налаштування Перейменування та Видалення ===
+
+    # Вкажіть артикул (базове ім'я) для перейменування оброблених файлів у папці результатів.
+    # - Якщо вказати рядок (напр., "MyProduct123"), то:
+    #   - Файл, оригінальне ім'я якого (без розширення) співпадає з артикулом,
+    #     буде названо "{article}.jpg".
+    #   - Решта файлів будуть названі "{article}_1.jpg", "{article}_2.jpg", ...
+    # - Якщо встановити None або порожній рядок "", перейменування за артикулом
+    #   НЕ БУДЕ виконуватися, і файли в папці результатів залишаться
+    #   з іменами '{оригінальне_ім'я}.jpg'.
+    article = "X38"                 # !!! ВАШ артикул або None
+
+    # Встановити True, щоб ВИДАЛИТИ оригінальні файли з папки ДЖЕРЕЛА
+    # (input_folder_path) ПІСЛЯ їх успішної обробки та збереження результату.
+    # Встановити False, щоб НЕ видаляти оригінали.
+    # УВАГА: Видалення незворотнє! Рекомендується використовувати разом з резервним копіюванням.
+    delete_originals_after_processing = False # !!! True або False
+
+    # === Попередній Ресайз (До основної обробки) ===
+    # Зменшує розмір зображення ДО початку обробки (відбілювання, фон і т.д.).
+    # Корисно, якщо вихідні файли дуже великі, а фінальний результат все одно
+    # буде меншим, щоб прискорити обробку.
+    # Зображення вписується в зазначені розміри зі збереженням пропорцій,
+    # вільний простір заповнюється білим.
+    # Встановіть 0 для ширини АБО висоти, щоб ВИМКНУТИ цей крок.
+    preresize_width = 0                     # !!! Бажана ширина (0 для вимкнення)
+    preresize_height = 0                    # !!! Бажана висота (0 для вимкнення)
+
+    # === Відбілювання ===
+    # Вмикає/вимикає функцію автоматичного відбілювання.
+    # Аналізує ПЕРИМЕТР зображення (після попереднього ресайзу, якщо він був),
+    # знаходить найтемніший піксель і коригує кольори, щоб він став білим.
+    enable_whitening = True                 # !!! True або False
+
+    # === Параметри Обробки Зображень (Після відбілювання) ===
+
+    # Допуск для білого кольору (0-255).
+    # Впливає на видалення фону та перевірку периметра.
+    # Встановіть None, щоб ПОВНІСТЮ ВИМКНУТИ видалення білого фону
+    # та обрізку по прозорості (кроки 3 і 4).
+    tolerance_for_white = 15                # !!! Число 0-255 або None
+
+    # Відступ в пікселях від краю для перевірки периметра на білий колір
+    # (використовується для умовного додавання полів).
+    # Встановіть 0, щоб ВИМКНУТИ цю перевірку (і залежне від неї додавання полів).
+    perimeter_check_margin_pixels = 3       # !!! 0 або більше
+
+    # Відсоток полів, що додаються, ЯКЩО perimeter_check_margin > 0 і периметр визнано білим.
+    # Встановіть 0.0, щоб ВИМКНУТИ додавання полів, навіть якщо умова виконана.
+    padding_percentage = 5.0                # !!! 0.0 або більше
+
+    # === Фінальний Ресайз (Після всіх обробок) ===
+    # Змінює розмір ГОТОВОГО зображення (після видалення фону, полів і т.д.)
+    # перед збереженням у фінальний JPG.
+    # Зображення вписується у зазначені розміри зі збереженням пропорцій,
+    # вільний простір заповнюється білим.
+    # Встановіть 0 для ширини АБО висоти, щоб ВИМКНУТИ цей крок.
+    final_resize_width = 1500               # !!! Бажана ширина (0 для вимкнення)
+    final_resize_height = 1500              # !!! Бажана висота (0 для вимкнення)
+
+    # --- Кінець Налаштувань Користувача ---
+
+
+    # --- Логіка визначення шляху результатів, якщо не вказано ---
+    if output_folder_path is None:
+        output_folder_path = os.path.join(input_folder_path, "output_processed")
+        print(f"* Папку результатів не вказано, буде використано: {output_folder_path}")
     # --- ---
 
-    if not os.path.isdir(folder_to_process):
-         print(f"Помилка: Вказана папка не існує або недоступна: {folder_to_process}")
+    # --- Запуск Скрипта ---
+    print("--- Початок роботи скрипту ---")
+    if not os.path.isdir(input_folder_path):
+         print(f"\nПомилка: Вказана папка ДЖЕРЕЛА не існує: {input_folder_path}")
     else:
          rename_and_convert_images(
-             folder_to_process,
-             article,
-             tolerance_for_white,
-             padding_percentage,
-             perimeter_check_margin_pixels # Передаємо новий параметр
+             input_path=input_folder_path,
+             output_path=output_folder_path,
+             article_name=article,
+             delete_originals=delete_originals_after_processing,
+             preresize_width=preresize_width,
+             preresize_height=preresize_height,
+             enable_whitening=enable_whitening,
+             white_tolerance=tolerance_for_white,
+             perimeter_margin=perimeter_check_margin_pixels,
+             padding_percent=padding_percentage,
+             final_resize_width=final_resize_width,
+             final_resize_height=final_resize_height,
+             backup_folder_path=backup_folder_path,
          )
-         print("\nРобота скрипту завершена.")
+         print("\n--- Робота скрипту завершена ---")
