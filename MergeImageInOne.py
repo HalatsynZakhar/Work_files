@@ -37,7 +37,7 @@ def safe_close(img_obj):
             pass # Ігноруємо помилки при закритті
 
 # --- Функція відбілювання ---
-# <<< МОДИФІКАЦІЯ: Додано параметр cancel_threshold_sum >>>
+# (Код whiten_image_by_darkest_perimeter залишається без змін, як у попередньому повідомленні)
 def whiten_image_by_darkest_perimeter(img, cancel_threshold_sum):
     """
     Відбілює зображення за найтемнішим пікселем периметру.
@@ -75,6 +75,9 @@ def whiten_image_by_darkest_perimeter(img, cancel_threshold_sum):
         if width <= 1 or height <= 1:
             print("      ! Зображення замале для аналізу периметру. Відбілювання скасовано.")
             final_image = img_copy # Повернемо RGBA/RGB копію
+            # Закриваємо проміжні, якщо створилися
+            safe_close(alpha_channel)
+            safe_close(img_rgb)
             return final_image # Виходимо раніше
 
         darkest_pixel_rgb = None
@@ -105,6 +108,9 @@ def whiten_image_by_darkest_perimeter(img, cancel_threshold_sum):
         if darkest_pixel_rgb is None:
             print("      ! Не знайдено валідних пікселів периметру. Відбілювання скасовано.")
             final_image = img_copy # Повертаємо копію
+            # Закриваємо проміжні
+            safe_close(alpha_channel)
+            safe_close(img_rgb)
             return final_image
 
         ref_r, ref_g, ref_b = darkest_pixel_rgb
@@ -112,18 +118,22 @@ def whiten_image_by_darkest_perimeter(img, cancel_threshold_sum):
         print(f"      - Знайдений найтемніший піксель: R={ref_r}, G={ref_g}, B={ref_b} (Сума: {current_pixel_sum:.0f})")
         print(f"      - Поріг скасування відбілювання (мін. сума): {cancel_threshold_sum}")
 
-        # <<< НОВА ЛОГІКА: Перевірка порогу скасування >>>
+        # Перевірка порогу скасування
         if current_pixel_sum < cancel_threshold_sum:
             print(f"      ! Найтемніший піксель (сума {current_pixel_sum:.0f}) темніший за поріг ({cancel_threshold_sum}). Відбілювання скасовано.")
             final_image = img_copy # Повертаємо копію (можливо RGBA) без змін
-            # Ресурси будуть закриті у finally
+            # Закриваємо проміжні
+            safe_close(alpha_channel)
+            safe_close(img_rgb)
             return final_image
-        # <<< КІНЕЦЬ НОВОЇ ЛОГІКИ >>>
 
         # Перевірка, чи референс вже білий
         if ref_r == 255 and ref_g == 255 and ref_b == 255:
             print("      - Відбілювання не потрібне (референс вже білий).")
             final_image = img_copy # Повертаємо копію (з можливою альфою)
+            # Закриваємо проміжні
+            safe_close(alpha_channel)
+            safe_close(img_rgb)
             return final_image
 
         # Продовжуємо відбілювання
@@ -163,6 +173,7 @@ def whiten_image_by_darkest_perimeter(img, cancel_threshold_sum):
         traceback.print_exc(limit=1) # Додамо трохи деталей помилки
         # Повертаємо img_copy, бо це найбільш безпечний варіант (принаймні RGBA або копія)
         final_image = img_copy if img_copy else img
+        img_copy = None # Не закривати копію у finally, якщо вона стала final_image
     finally:
         # Закриваємо всі проміжні об'єкти
         safe_close(r_ch)
@@ -186,9 +197,8 @@ def whiten_image_by_darkest_perimeter(img, cancel_threshold_sum):
     # Повертаємо або відбілене зображення (RGB або RGBA), або копію оригіналу (RGBA/RGB)
     return final_image
 
-
 # --- Функція видалення білого фону ---
-# ... (код remove_white_background залишається без змін) ...
+# (Код remove_white_background залишається без змін)
 def remove_white_background(img, tolerance):
     """Перетворює білі пікселі на прозорі."""
     print(f"    - Спроба видалення білого фону (допуск: {tolerance})...")
@@ -234,7 +244,7 @@ def remove_white_background(img, tolerance):
     return final_image
 
 # --- Функція обрізки ---
-# ... (код crop_image залишається без змін) ...
+# (Код crop_image залишається без змін)
 def crop_image(img, symmetric_axes=False, symmetric_absolute=False):
     """Обрізає прозорі краї зображення з опціями симетрії."""
     mode_str = "Стандартний"
@@ -255,58 +265,58 @@ def crop_image(img, symmetric_axes=False, symmetric_absolute=False):
             print("      - Не знайдено непрозорих пікселів. Обрізка не потрібна.")
             final_image = img_rgba # Повертаємо RGBA версію
             img_rgba = None # Обнуляємо
-            return final_image
-
-        original_width, original_height = img_rgba.size
-        left, upper, right, lower = bbox
-        print(f"      - Знайдено bbox: L={left}, T={upper}, R={right}, B={lower}")
-
-        if left >= right or upper >= lower:
-             print(f"      ! Невалідний bbox. Обрізка скасована.")
-             final_image = img_rgba # Повертаємо RGBA версію
-             img_rgba = None
-             return final_image
-
-        base_crop_box = bbox
-        if symmetric_absolute:
-            dist_left = left; dist_top = upper
-            dist_right = original_width - right; dist_bottom = original_height - lower
-            min_dist = min(dist_left, dist_top, dist_right, dist_bottom)
-            new_box = (min_dist, min_dist, original_width - min_dist, original_height - min_dist)
-            if new_box[0] < new_box[2] and new_box[1] < new_box[3]: # Перевірка валідності
-                 base_crop_box = new_box
-                 print(f"      - Абсолютно симетричний bbox: {base_crop_box}")
-            else: print("      ! Абсолютно симетричний bbox невалідний, використання стандартного.")
-        elif symmetric_axes:
-            dist_left = left; dist_top = upper
-            dist_right = original_width - right; dist_bottom = original_height - lower
-            min_h = min(dist_left, dist_right); min_v = min(dist_top, dist_bottom)
-            new_box = (min_h, min_v, original_width - min_h, original_height - min_v)
-            if new_box[0] < new_box[2] and new_box[1] < new_box[3]: # Перевірка валідності
-                 base_crop_box = new_box
-                 print(f"      - Симетричний по осях bbox: {base_crop_box}")
-            else: print("      ! Симетричний по осях bbox невалідний, використання стандартного.")
-
-        # Додаємо відступ 1px
-        l, u, r, b = base_crop_box
-        final_crop_box = (max(0, l - 1), max(0, u - 1),
-                          min(original_width, r + 1), min(original_height, b + 1))
-        print(f"      - Фінальний crop_box (з відступом 1px): {final_crop_box}")
-
-        # Перевірка, чи обрізка взагалі потрібна
-        if final_crop_box == (0, 0, original_width, original_height):
-             print("      - Обрізка не потрібна (рамка збігається з розміром зображення).")
-             final_image = img_rgba # Повертаємо RGBA версію
-             img_rgba = None
-        elif final_crop_box[0] < final_crop_box[2] and final_crop_box[1] < final_crop_box[3]:
-            cropped_img = img_rgba.crop(final_crop_box)
-            print(f"      - Обрізка успішна. Новий розмір: {cropped_img.size}")
-            final_image = cropped_img # Результат - нове обрізане зображення
-            cropped_img = None # Обнуляємо
+            # Тут не робимо return, дозволяємо finally закрити img_rgba, якщо він не final_image
         else:
-             print("      ! Невалідний фінальний crop_box. Обрізка скасована.")
-             final_image = img_rgba # Повертаємо RGBA версію без обрізки
-             img_rgba = None
+            original_width, original_height = img_rgba.size
+            left, upper, right, lower = bbox
+            print(f"      - Знайдено bbox: L={left}, T={upper}, R={right}, B={lower}")
+
+            if left >= right or upper >= lower:
+                 print(f"      ! Невалідний bbox. Обрізка скасована.")
+                 final_image = img_rgba # Повертаємо RGBA версію
+                 img_rgba = None
+                 # Тут не робимо return
+            else:
+                base_crop_box = bbox
+                if symmetric_absolute:
+                    dist_left = left; dist_top = upper
+                    dist_right = original_width - right; dist_bottom = original_height - lower
+                    min_dist = min(dist_left, dist_top, dist_right, dist_bottom)
+                    new_box = (min_dist, min_dist, original_width - min_dist, original_height - min_dist)
+                    if new_box[0] < new_box[2] and new_box[1] < new_box[3]: # Перевірка валідності
+                         base_crop_box = new_box
+                         print(f"      - Абсолютно симетричний bbox: {base_crop_box}")
+                    else: print("      ! Абсолютно симетричний bbox невалідний, використання стандартного.")
+                elif symmetric_axes:
+                    dist_left = left; dist_top = upper
+                    dist_right = original_width - right; dist_bottom = original_height - lower
+                    min_h = min(dist_left, dist_right); min_v = min(dist_top, dist_bottom)
+                    new_box = (min_h, min_v, original_width - min_h, original_height - min_v)
+                    if new_box[0] < new_box[2] and new_box[1] < new_box[3]: # Перевірка валідності
+                         base_crop_box = new_box
+                         print(f"      - Симетричний по осях bbox: {base_crop_box}")
+                    else: print("      ! Симетричний по осях bbox невалідний, використання стандартного.")
+
+                # Додаємо відступ 1px
+                l, u, r, b = base_crop_box
+                final_crop_box = (max(0, l - 1), max(0, u - 1),
+                                  min(original_width, r + 1), min(original_height, b + 1))
+                print(f"      - Фінальний crop_box (з відступом 1px): {final_crop_box}")
+
+                # Перевірка, чи обрізка взагалі потрібна
+                if final_crop_box == (0, 0, original_width, original_height):
+                     print("      - Обрізка не потрібна (рамка збігається з розміром зображення).")
+                     final_image = img_rgba # Повертаємо RGBA версію
+                     img_rgba = None
+                elif final_crop_box[0] < final_crop_box[2] and final_crop_box[1] < final_crop_box[3]:
+                    cropped_img = img_rgba.crop(final_crop_box)
+                    print(f"      - Обрізка успішна. Новий розмір: {cropped_img.size}")
+                    final_image = cropped_img # Результат - нове обрізане зображення
+                    cropped_img = None # Обнуляємо
+                else:
+                     print("      ! Невалідний фінальний crop_box. Обрізка скасована.")
+                     final_image = img_rgba # Повертаємо RGBA версію без обрізки
+                     img_rgba = None
 
     except Exception as e:
         print(f"      ! Помилка під час обрізки: {e}. Повертається оригінал.")
@@ -322,9 +332,8 @@ def crop_image(img, symmetric_axes=False, symmetric_absolute=False):
 
     return final_image
 
-
 # --- Функція додавання полів ---
-# ... (код add_padding залишається без змін) ...
+# (Код add_padding залишається без змін)
 def add_padding(img, percent):
     """Додає прозорі поля навколо зображення."""
     if percent <= 0:
@@ -337,7 +346,8 @@ def add_padding(img, percent):
     try:
         w, h = img.size
         if w == 0 or h == 0: return img # Немає чого додавати
-        pp = int(max(w, h) * (percent / 100.0))
+        # Використовуємо round для кращого заокруглення пікселів
+        pp = int(round(max(w, h) * (percent / 100.0)))
         if pp <= 0: return img # Поля нульові
 
         nw, nh = w + 2*pp, h + 2*pp
@@ -347,8 +357,9 @@ def add_padding(img, percent):
         img_rgba_src = img if img.mode == 'RGBA' else img.convert('RGBA')
 
         padded_img = Image.new('RGBA', (nw, nh), (0,0,0,0))
-        # Використовуємо альфа-канал джерела як маску
-        padded_img.paste(img_rgba_src, (pp, pp), mask=img_rgba_src)
+        # Використовуємо альфа-канал джерела як маску, якщо він є
+        paste_mask = img_rgba_src if img_rgba_src.mode == 'RGBA' else None
+        padded_img.paste(img_rgba_src, (pp, pp), mask=paste_mask)
         print("      - Поля успішно додано.")
         final_image = padded_img # Результат - нове зображення з полями
         padded_img = None # Обнуляємо
@@ -368,7 +379,7 @@ def add_padding(img, percent):
     return final_image
 
 # --- Функція перевірки білого периметру (Інформаційна) ---
-# ... (код check_perimeter_is_white залишається без змін) ...
+# (Код check_perimeter_is_white залишається без змін)
 def check_perimeter_is_white(img, tolerance, margin):
     """Перевіряє, чи є периметр зображення білим (інформаційно)."""
     if margin <= 0: return False
@@ -381,11 +392,25 @@ def check_perimeter_is_white(img, tolerance, margin):
         if img.mode == 'RGBA' or 'A' in img.getbands():
              img_check = Image.new("RGB", img.size, (255, 255, 255))
              try:
-                 mask = img.getchannel('A')
+                 # Спробуємо отримати альфа-канал безпечніше
+                 if img.mode == 'RGBA':
+                     mask = img.split()[-1]
+                 else: # Для LA, PA і т.д.
+                     with img.convert('RGBA') as temp_rgba:
+                         mask = temp_rgba.split()[-1]
                  img_check.paste(img, mask=mask)
-             except Exception: # Якщо не вдалося отримати/використати маску
-                 print("      ! Попередження: не вдалося використати альфа-канал для перевірки периметру.")
-                 img_check.paste(img) # Спробуємо просто paste
+             except Exception as mask_err: # Якщо не вдалося отримати/використати маску
+                 print(f"      ! Попередження: не вдалося використати альфа-канал для перевірки периметру ({mask_err}).")
+                 # Спробуємо конвертувати в RGB напряму, хоча це може дати не білий фон для прозорих ділянок
+                 try:
+                     with img.convert('RGB') as rgb_ver:
+                          img_check.paste(rgb_ver)
+                 except Exception as paste_err:
+                      print(f"      ! Не вдалося навіть вставити RGB версію: {paste_err}")
+                      # Якщо нічого не вдалося, не можемо перевірити
+                      safe_close(img_check) # Закриваємо порожній холст
+                      safe_close(mask)      # Закриваємо маску, якщо вона є
+                      return False
         else:
             # Якщо немає альфи, просто конвертуємо в RGB або копіюємо
             img_check = img.convert("RGB") if img.mode != 'RGB' else img.copy()
@@ -400,6 +425,8 @@ def check_perimeter_is_white(img, tolerance, margin):
 
         if mh == 0 or mw == 0 or width == 0 or height == 0: # Немає чого перевіряти
              print("      ! Зображення замале для перевірки периметру.")
+             safe_close(img_check) # Закриваємо створений об'єкт
+             safe_close(mask)
              return False
 
         pixels = img_check.load()
@@ -444,57 +471,110 @@ def check_perimeter_is_white(img, tolerance, margin):
 
 
 # --- Функція обробки одного зображення ---
-# <<< МОДИФІКАЦІЯ: Додано параметр whitening_cancel_threshold_sum >>>
-def process_image(image_path, enable_whitening, whitening_cancel_threshold_sum,
+# <<< МОДИФІКАЦІЯ: Додано параметри preprocess_max_width/height >>>
+def process_image(image_path, preprocess_max_width, preprocess_max_height, # Нові параметри
+                  enable_whitening, whitening_cancel_threshold_sum,
                   white_tolerance, perimeter_margin,
                   crop_symmetric_axes, crop_symmetric_absolute):
-    """Завантажує, обробляє та повертає зображення RGBA або None."""
+    """Завантажує, (опц.) попередньо ресайзить, обробляє та повертає зображення RGBA або None."""
     print(f"\n--- Обробка файлу: {os.path.basename(image_path)} ---")
     img = None
     processed_img = None # Змінна для результату після всіх кроків
+    resized_img_pr = None # Для результату попереднього ресайзу
 
     try:
-        # 1. Завантаження
+        # --- 1. Завантаження та конвертація в RGBA ---
         print("  - Крок 1: Завантаження...")
         img_opened = None # Оголошуємо поза with для finally
         try:
-             img_opened = Image.open(image_path)
-             img_opened.load()
-             # Одразу конвертуємо в RGBA для уніфікації подальших кроків
-             img = img_opened.convert('RGBA')
-             print(f"    - Завантажено та конвертовано в RGBA. Розмір: {img.size}")
-        finally:
-             safe_close(img_opened) # Закриваємо файловий дескриптор
+             with Image.open(image_path) as img_opened:
+                 img_opened.load()
+                 # Одразу конвертуємо в RGBA для уніфікації подальших кроків
+                 img = img_opened.convert('RGBA')
+                 print(f"    - Завантажено та конвертовано в RGBA. Розмір: {img.size}")
+        except Exception as e:
+             print(f"  !! ПОМИЛКА ЗАВАНТАЖЕННЯ/КОНВЕРТАЦІЇ: {e}")
+             raise # Перекидаємо помилку вище для обробки
 
-        if not img: # Якщо конвертація не вдалась (малоймовірно)
+        if not img:
              raise ValueError("Не вдалося створити об'єкт зображення.")
 
         processed_img = img # Починаємо з RGBA версії
         img = None # Початковий об'єкт більше не потрібен
 
-        # 2. Відбілювання (Опціонально)
+        # --- 2. Попередній Ресайз (Тільки зменшення, без холста) ---
+        perform_preresize = (preprocess_max_width is not None and preprocess_max_width > 0) or \
+                            (preprocess_max_height is not None and preprocess_max_height > 0)
+        if perform_preresize:
+             print(f"  - Крок 2: Попередній ресайз (макс. {preprocess_max_width or 'Авто'}x{preprocess_max_height or 'Авто'})...")
+             prev_img = processed_img
+             ow, oh = prev_img.size
+             max_w = preprocess_max_width if preprocess_max_width and preprocess_max_width > 0 else float('inf')
+             max_h = preprocess_max_height if preprocess_max_height and preprocess_max_height > 0 else float('inf')
+
+             # Перевіряємо, чи потрібно взагалі зменшувати
+             needs_resizing = (ow > max_w or oh > max_h) and ow > 0 and oh > 0
+
+             if needs_resizing:
+                 resized_img_pr = None # Скидаємо перед використанням
+                 try:
+                     # Розраховуємо коефіцієнт масштабування для зменшення
+                     ratio = 1.0
+                     if ow > max_w: ratio = min(ratio, max_w / ow)
+                     if oh > max_h: ratio = min(ratio, max_h / oh)
+
+                     # Переконуємось, що масштабування справді потрібне (ratio < 1.0)
+                     if ratio < 1.0:
+                         nw = max(1, int(round(ow * ratio)))
+                         nh = max(1, int(round(oh * ratio)))
+                         print(f"    - Поточний розмір ({ow}x{oh}) перевищує ліміти.")
+                         print(f"    - Зменшення до {nw}x{nh} (ratio: {ratio:.4f})...")
+                         resized_img_pr = prev_img.resize((nw, nh), Image.Resampling.LANCZOS)
+
+                         # Замінюємо processed_img новим зменшеним зображенням
+                         safe_close(prev_img) # Закриваємо попередній стан (який був більшим)
+                         processed_img = resized_img_pr; resized_img_pr = None # Перепризначили
+                         print(f"    - Новий розмір після ресайзу: {processed_img.size}, Режим: {processed_img.mode}")
+                     else:
+                          print("    - Розрахунок показав, що зменшення не потрібне (ratio=1.0).")
+                          # processed_img залишається prev_img
+                 except Exception as pr_err:
+                     print(f"   ! Помилка під час попереднього ресайзу (зменшення): {pr_err}")
+                     safe_close(resized_img_pr) # Закриваємо тимчасовий, якщо створився
+                     # processed_img залишається prev_img
+                 # finally блок не потрібен, бо resized_img_pr або став processed_img, або закрився в except
+             else:
+                 print(f"    - Зображення ({ow}x{oh}) вже в межах лімітів. Зменшення не потрібне.")
+        else:
+             print("  - Крок 2: Попередній ресайз вимкнено.")
+
+        # Перевірка розміру після можливого ресайзу
+        if processed_img.size[0] <= 0 or processed_img.size[1] <= 0:
+             print(f"  !! ПОМИЛКА: Зображення має нульовий розмір після Кроку 2. Пропуск файлу.")
+             safe_close(processed_img)
+             return None
+
+        # --- 3. Відбілювання (Опціонально) ---
         if enable_whitening:
-            print("  - Крок 2: Відбілювання...")
-            # <<< МОДИФІКАЦІЯ: Передаємо поріг >>>
+            print("  - Крок 3: Відбілювання...")
             whitened = whiten_image_by_darkest_perimeter(processed_img, whitening_cancel_threshold_sum)
-            if whitened is not processed_img: # Якщо відбілювання щось змінило/створило новий об'єкт
-                safe_close(processed_img) # Закриваємо попередній стан
-                processed_img = whitened # Оновлюємо результат
+            if whitened is not processed_img:
+                safe_close(processed_img)
+                processed_img = whitened
                 print(f"    - Результат відбілювання застосовано. Режим: {processed_img.mode}")
             else:
-                print(f"    - Відбілювання не змінило зображення (або було скасовано).")
-                # processed_img залишається тим самим
+                print(f"    - Відбілювання не змінило зображення.")
 
-        # 3. Перевірка периметру (Інформаційно)
+        # --- 4. Перевірка периметру (Інформаційно) ---
         if perimeter_margin > 0:
-             print("  - Крок 3: Інформаційна перевірка периметру...")
+             print("  - Крок 4: Інформаційна перевірка периметру...")
              check_tolerance = white_tolerance if white_tolerance is not None and white_tolerance >= 0 else 0
              check_perimeter_is_white(processed_img, check_tolerance, perimeter_margin)
 
-        # 4 & 5. Видалення фону та Обрізка (Якщо white_tolerance задано)
+        # --- 5 & 6. Видалення фону та Обрізка (Якщо white_tolerance задано) ---
         enable_bg_removal_and_crop = white_tolerance is not None and white_tolerance >= 0
         if enable_bg_removal_and_crop:
-            print(f"  - Крок 4: Видалення білого фону (допуск {white_tolerance})...")
+            print(f"  - Крок 5: Видалення білого фону (допуск {white_tolerance})...")
             no_bg = remove_white_background(processed_img, white_tolerance)
             if no_bg is not processed_img:
                  safe_close(processed_img)
@@ -504,7 +584,7 @@ def process_image(image_path, enable_whitening, whitening_cancel_threshold_sum,
                  print(f"    - Видалення фону не змінило зображення.")
 
 
-            print("  - Крок 5: Обрізка країв...")
+            print("  - Крок 6: Обрізка країв...")
             cropped = crop_image(processed_img, crop_symmetric_axes, crop_symmetric_absolute)
             if cropped is not processed_img:
                  safe_close(processed_img)
@@ -520,9 +600,9 @@ def process_image(image_path, enable_whitening, whitening_cancel_threshold_sum,
                  safe_close(processed_img) # Закриємо те, що залишилося
                  return None
         else:
-             print("  - Кроки 4 та 5: Видалення фону та обрізка вимкнені.")
+             print("  - Кроки 5 та 6: Видалення фону та обрізка вимкнені.")
 
-        # 6. Фінальна перевірка (має бути RGBA)
+        # --- 7. Фінальна перевірка (має бути RGBA) ---
         if processed_img.mode != 'RGBA':
              print(f"  ! ПОПЕРЕДЖЕННЯ: Результат чомусь не RGBA ({processed_img.mode}). Спроба фінальної конвертації...")
              final_rgba = None
@@ -550,20 +630,15 @@ def process_image(image_path, enable_whitening, whitening_cancel_threshold_sum,
     except Exception as e:
         print(f"  !! НЕОЧІКУВАНА ГЛОБАЛЬНА ПОМИЛКА обробки {os.path.basename(image_path)}: {e}")
         traceback.print_exc(limit=2)
-    finally:
-        # Закриваємо основні змінні, якщо вони ще існують і не є результатом
-        safe_close(img)
-        # processed_img повертається або стає None, його закривати не треба тут
-        pass
-
-    # Якщо дісталися сюди через помилку в try блоці
-    safe_close(processed_img) # Закриваємо на випадок помилки
-    return None
+        safe_close(processed_img) # Закриваємо на випадок помилки
+        return None
+    # finally блок не потрібен, бо повертаємо processed_img або None
 
 
 # --- Функція об'єднання ---
-# <<< МОДИФІКАЦІЯ: Додано параметр whitening_cancel_threshold_sum >>>
+# <<< МОДИФІКАЦІЯ: Додано параметри preprocess_max_width/height >>>
 def combine_images(image_paths, output_path,
+                   preprocess_max_width, preprocess_max_height, # Нові параметри
                    enable_whitening, whitening_cancel_threshold_sum,
                    forced_cols, spacing_percent, white_tolerance, quality,
                    perimeter_margin, padding_percent,
@@ -599,10 +674,19 @@ def combine_images(image_paths, output_path,
             if output_abs_path and os.path.abspath(path).lower() == output_abs_path.lower():
                 print(f"   - Пропуск: '{os.path.basename(path)}' (збігається з вихідним файлом).")
                 continue
-            # <<< МОДИФІКАЦІЯ: Передаємо поріг >>>
-            processed = process_image(path, enable_whitening, whitening_cancel_threshold_sum,
-                                     white_tolerance, perimeter_margin,
-                                     crop_symmetric_axes, crop_symmetric_absolute)
+
+            # <<< МОДИФІКАЦІЯ: Передаємо нові параметри в process_image >>>
+            processed = process_image(
+                image_path=path,
+                preprocess_max_width=preprocess_max_width, # Новий параметр
+                preprocess_max_height=preprocess_max_height, # Новий параметр
+                enable_whitening=enable_whitening,
+                whitening_cancel_threshold_sum=whitening_cancel_threshold_sum,
+                white_tolerance=white_tolerance,
+                perimeter_margin=perimeter_margin,
+                crop_symmetric_axes=crop_symmetric_axes,
+                crop_symmetric_absolute=crop_symmetric_absolute
+            )
             if processed:
                 processed_images.append(processed)
             # process_image сама друкує помилки
@@ -614,6 +698,7 @@ def combine_images(image_paths, output_path,
         print(f"\n--- Базова обробка завершена. Готово {num_processed} зображень (Режим RGBA) ---")
 
         # --- 2. Пропорційне масштабування (опц.) ---
+        # (Код цього кроку залишається без змін)
         source_list_scaling = processed_images # Список для цього кроку
         target_list_scaling = scaled_images  # Куди записувати результат
         if proportional_placement and num_processed > 0:
@@ -632,14 +717,14 @@ def combine_images(image_paths, output_path,
                         except (ValueError, TypeError): ratio = 1.0
 
                     # Розраховуємо цільові розміри на основі базового та коефіцієнта
-                    target_w = int(base_w * ratio); target_h = int(base_h * ratio)
+                    target_w = int(round(base_w * ratio)); target_h = int(round(base_h * ratio))
                     current_w, current_h = img.size
 
                     # Перевіряємо, чи потрібно масштабування і чи розміри валідні
                     if current_w > 0 and current_h > 0 and target_w > 0 and target_h > 0:
                         # Рахуємо коефіцієнт для вписування в цільові розміри
                         scale = min(target_w / current_w, target_h / current_h)
-                        nw, nh = max(1, int(current_w * scale)), max(1, int(current_h * scale))
+                        nw, nh = max(1, int(round(current_w * scale))), max(1, int(round(current_h * scale)))
 
                         # Змінюємо розмір тільки якщо новий розмір відрізняється
                         if nw != current_w or nh != current_h:
@@ -668,7 +753,9 @@ def combine_images(image_paths, output_path,
             target_list_scaling.extend(source_list_scaling) # Копіюємо без змін
             processed_images = [] # Очищаємо попередній список
 
+
         # --- 3. Додавання полів ---
+        # (Код цього кроку залишається без змін)
         source_list_padding = scaled_images # Список для цього кроку
         target_list_padding = padded_images # Куди записувати результат
         if padding_percent > 0:
@@ -683,6 +770,7 @@ def combine_images(image_paths, output_path,
              target_list_padding.extend(source_list_padding) # Копіюємо без змін
              scaled_images = [] # Очищаємо попередній список
 
+
         # Перевірка після перших кроків
         num_final_images = len(padded_images)
         if num_final_images == 0:
@@ -690,6 +778,7 @@ def combine_images(image_paths, output_path,
             return
 
         # --- 4. Розрахунок розмірів колажу ---
+        # (Код цього кроку залишається без змін)
         print(f"\n--- КРОК 4: Створення колажу ({num_final_images} зображень) ---")
         # Визначаємо сітку
         grid_cols = forced_cols if forced_cols > 0 else max(1, math.ceil(math.sqrt(num_final_images)))
@@ -699,18 +788,19 @@ def combine_images(image_paths, output_path,
         max_h = max((img.size[1] for img in padded_images if img and img.size[1] > 0), default=1)
 
         # Розраховуємо відступи та розмір холсту
-        h_spacing = int(max_w * (spacing_percent / 100.0))
-        v_spacing = int(max_h * (spacing_percent / 100.0))
+        h_spacing = int(round(max_w * (spacing_percent / 100.0))) # Використовуємо round
+        v_spacing = int(round(max_h * (spacing_percent / 100.0))) # Використовуємо round
         canvas_width = (grid_cols * max_w) + ((grid_cols + 1) * h_spacing)
         canvas_height = (grid_rows * max_h) + ((grid_rows + 1) * v_spacing)
 
         print(f"  - Сітка: {grid_rows}x{grid_cols}, Макс. комірка: {max_w}x{max_h}, Відступи: H={h_spacing} V={v_spacing}")
         print(f"  - Розрахунковий розмір холсту: {canvas_width}x{canvas_height}")
-        canvas = Image.new('RGBA', (canvas_width, canvas_height), (0, 0, 0, 0))
-        collage_step_img = canvas # Починаємо трансформації з цього холсту
-        canvas = None # Обнуляємо
+        # Створюємо одразу collage_step_img
+        collage_step_img = Image.new('RGBA', (canvas_width, canvas_height), (0, 0, 0, 0))
+
 
         # --- 5. Розміщення зображень ---
+        # (Код цього кроку залишається без змін)
         print("  - Розміщення зображень на холсті...")
         current_idx = 0
         for r in range(grid_rows):
@@ -725,7 +815,6 @@ def combine_images(image_paths, output_path,
                 img = padded_images[current_idx]
                 if img and img.size[0] > 0 and img.size[1] > 0:
                      # Координати верхнього лівого кута для вставки
-                     # px = h_spacing + c * (max_w + h_spacing) # Без центрування рядка
                      px = start_x_offset + h_spacing + c * (max_w + h_spacing) # З центруванням рядка
                      py = v_spacing + r * (max_h + v_spacing)
                      # Центрування зображення всередині його комірки max_w x max_h
@@ -747,6 +836,7 @@ def combine_images(image_paths, output_path,
         padded_images = []
 
         # --- 6. Трансформації Колажу ---
+        # (Код цього кроку залишається без змін)
         print("\n--- КРОК 5: Трансформації колажу (Співвідношення, Макс.розмір, Точний холст) ---")
         # 6а. Співвідношення сторін
         valid_ratio = (force_collage_aspect_ratio and isinstance(force_collage_aspect_ratio, (tuple, list)) and len(force_collage_aspect_ratio) == 2 and
@@ -762,9 +852,9 @@ def combine_images(image_paths, output_path,
                     print(f"  - Застосування співвідношення {target_w_r}:{target_h_r}...")
                     # Визначаємо нові розміри холсту
                     if current_aspect > desired_aspect: # Зображення зашироке -> збільшуємо висоту
-                        nw, nh = cw, int(cw / desired_aspect)
+                        nw, nh = cw, int(round(cw / desired_aspect))
                     else: # Зображення зависоке -> збільшуємо ширину
-                        nw, nh = int(ch * desired_aspect), ch
+                        nw, nh = int(round(ch * desired_aspect)), ch
                     nw, nh = max(1, nw), max(1, nh) # Захист від нуля
                     temp_img = None
                     try:
@@ -789,11 +879,14 @@ def combine_images(image_paths, output_path,
              cw, ch = collage_step_img.size
              if cw > 0 and ch > 0: # Перевірка на нульовий розмір
                  scale = 1.0
-                 if max_w_valid and cw > max_collage_width: scale = min(scale, max_collage_width / cw)
-                 if max_h_valid and ch > max_collage_height: scale = min(scale, max_collage_height / ch)
+                 max_w_limit = max_collage_width if max_w_valid else float('inf')
+                 max_h_limit = max_collage_height if max_h_valid else float('inf')
+
+                 if cw > max_w_limit: scale = min(scale, max_w_limit / cw)
+                 if ch > max_h_limit: scale = min(scale, max_h_limit / ch)
 
                  if scale < 1.0:
-                     nw, nh = max(1, int(cw * scale)), max(1, int(ch * scale))
+                     nw, nh = max(1, int(round(cw * scale))), max(1, int(round(ch * scale)))
                      print(f"  - Обмеження максимального розміру до {nw}x{nh}...")
                      temp_img = None
                      try:
@@ -824,8 +917,8 @@ def combine_images(image_paths, output_path,
                     bg_color = (0,0,0,0) if mode == 'RGBA' else jpg_background_color
 
                     # Масштабуємо вміст, щоб вписати його
-                    scale_fit = min(tw / cw, th / ch)
-                    nw, nh = max(1, int(cw * scale_fit)), max(1, int(ch * scale_fit))
+                    scale_fit = min(tw / cw, th / ch) if cw > 0 and ch > 0 else 1.0
+                    nw, nh = max(1, int(round(cw * scale_fit))), max(1, int(round(ch * scale_fit)))
 
                     temp_content = None
                     temp_canvas = None
@@ -837,8 +930,6 @@ def combine_images(image_paths, output_path,
                         x, y = (tw - nw) // 2, (th - nh) // 2 # Координати для центрування
 
                         # Готуємо маску для вставки, якщо потрібно
-                        # Якщо холст RGB, а вміст має прозорість - треба маска
-                        # Якщо холст RGBA і вміст має прозорість - теж треба маска
                         if temp_content.mode == 'RGBA':
                              paste_mask = temp_content # Використовуємо альфа-канал RGBA як маску
 
@@ -863,7 +954,9 @@ def combine_images(image_paths, output_path,
                      print(f"  - Колаж вже має потрібний точний розмір ({tw}x{th}).")
             else: print("  - Пропуск створення точного холсту через нульовий розмір колажу.")
 
+
         # --- 7. Підготовка до збереження ---
+        # (Код цього кроку залишається без змін)
         print("\n--- КРОК 6: Підготовка до збереження ---")
         final_img_to_save = collage_step_img # За замовчуванням
         collage_step_img = None # Обнуляємо для зачистки
@@ -915,6 +1008,7 @@ def combine_images(image_paths, output_path,
 
 
         # --- 8. Збереження ---
+        # (Код цього кроку залишається без змін)
         if not final_img_to_save:
              print("!! ПОМИЛКА: Немає фінального зображення для збереження.")
              return
@@ -925,6 +1019,16 @@ def combine_images(image_paths, output_path,
 
         # Корекція шляху та імені файлу
         output_dir = os.path.dirname(output_path)
+        # Створюємо папку, якщо її немає
+        if not os.path.exists(output_dir):
+             try:
+                 os.makedirs(output_dir)
+                 print(f"[*] Створено вихідну папку: '{output_dir}'")
+             except Exception as e_mkdir:
+                 print(f"!! ПОМИЛКА створення вихідної папки '{output_dir}': {e_mkdir}")
+                 safe_close(final_img_to_save)
+                 return
+
         output_base_name = os.path.basename(output_path)
         output_name_no_ext, _ = os.path.splitext(output_base_name)
         output_ext_correct = f".{output_format_lower}"
@@ -964,8 +1068,9 @@ def combine_images(image_paths, output_path,
 
 
 # --- Основна функція запуску ---
-# <<< МОДИФІКАЦІЯ: Додано параметр whitening_cancel_threshold_sum >>>
+# <<< МОДИФІКАЦІЯ: Додано параметри preprocess_max_width/height >>>
 def run_processing(source_dir, output_filename,
+                   preprocess_max_width, preprocess_max_height, # Нові параметри
                    enable_whitening, whitening_cancel_threshold_sum,
                    forced_cols, perimeter_margin, padding_percent, white_tolerance,
                    spacing_percent, quality,
@@ -982,9 +1087,18 @@ def run_processing(source_dir, output_filename,
     print("=" * 60)
     print(f"[*] Папка джерела: '{source_dir}'")
     print(f"[*] Вихідний файл: '{output_filename}' (Формат: {output_format.upper()})")
+
+    # <<< МОДИФІКАЦІЯ: Виводимо нові параметри >>>
+    print("\n--- Налаштування Попередньої Обробки Зображень ---")
+    pre_w_str = str(preprocess_max_width) if preprocess_max_width and preprocess_max_width > 0 else "Немає"
+    pre_h_str = str(preprocess_max_height) if preprocess_max_height and preprocess_max_height > 0 else "Немає"
+    if pre_w_str != "Немає" or pre_h_str != "Немає":
+        print(f"  - Попередній ресайз (макс.): Ш={pre_w_str}, В={pre_h_str}")
+    else:
+        print(f"  - Попередній ресайз: Вимкнено")
+
     print("\n--- Налаштування Обробки Зображень ---")
     print(f"  - Відбілювання: {'Так' if enable_whitening else 'Ні'}")
-    # <<< МОДИФІКАЦІЯ: Виводимо новий параметр >>>
     if enable_whitening:
         print(f"    - Поріг скасування відбілювання (мін. сума RGB): {whitening_cancel_threshold_sum}")
     bg_crop_enabled = white_tolerance is not None and white_tolerance >= 0
@@ -1074,7 +1188,10 @@ def run_processing(source_dir, output_filename,
     # print("\n".join([f"   - {os.path.basename(f)}" for f in input_files_sorted])) # Розкоментувати для перегляду списку
 
     # --- Санітизація параметрів перед передачею ---
-    # Переконуємось, що None передається там, де очікується None або число
+    # <<< МОДИФІКАЦІЯ: Додаємо санітизацію для нових параметрів >>>
+    pre_max_w = preprocess_max_width if preprocess_max_width is not None and preprocess_max_width > 0 else 0
+    pre_max_h = preprocess_max_height if preprocess_max_height is not None and preprocess_max_height > 0 else 0
+    # ... (решта санітизації залишається без змін) ...
     wc_tolerance = white_tolerance if white_tolerance is not None and white_tolerance >= 0 else None
     f_cols = forced_cols if forced_cols is not None and forced_cols > 0 else 0
     p_margin = perimeter_margin if perimeter_margin is not None and perimeter_margin > 0 else 0
@@ -1098,10 +1215,13 @@ def run_processing(source_dir, output_filename,
         except (ValueError, TypeError): pass # Залишаємо default
 
     # Виклик combine_images з перевіреними/санітизованими параметрами
+    # <<< МОДИФІКАЦІЯ: Передаємо нові параметри >>>
     combine_images(
         image_paths=input_files_sorted, output_path=output_file_path,
+        preprocess_max_width=pre_max_w, # Новий параметр
+        preprocess_max_height=pre_max_h, # Новий параметр
         enable_whitening=enable_whitening,
-        whitening_cancel_threshold_sum=whitening_cancel_threshold_sum, # <<< Передача порогу
+        whitening_cancel_threshold_sum=whitening_cancel_threshold_sum,
         forced_cols=f_cols, spacing_percent=s_percent,
         white_tolerance=wc_tolerance, quality=jpg_qual, perimeter_margin=p_margin,
         padding_percent=p_percent, crop_symmetric_axes=crop_symmetric_axes,
@@ -1127,17 +1247,20 @@ if __name__ == "__main__":
     # |                        ЕТАП 0: Шляхи та Імена                        |
     # --------------------------------------------------------------------------
     source_directory = r"C:\Users\zakhar\Downloads\test3" # !!! ЗАМІНІТЬ НА ВАШ ШЛЯХ !!!
-    output_filename = "collage_final_threshold.jpg"
+    output_filename = "collage_preprocessed.jpg" # !!! Змініть, якщо потрібно
+
+    # --------------------------------------------------------------------------
+    # | <<< НОВЕ >>> ЕТАП 0.5: ПОПЕРЕДНЯ ОБРОБКА (Ресайз до інших кроків)    |
+    # --------------------------------------------------------------------------
+    # Зменшує зображення, якщо воно перевищує ці розміри, зберігаючи пропорції.
+    # 0 або None = без обмеження для відповідної сторони.
+    preprocess_max_width = 500      # Макс. ширина ДО іншої обробки (0 = вимкнено)
+    preprocess_max_height = 500     # Макс. висота ДО іншої обробки (0 = вимкнено)
 
     # --------------------------------------------------------------------------
     # |           ЕТАП 1: ОБРОБКА КОЖНОГО ЗОБРАЖЕННЯ ОКРЕМО                  |
     # --------------------------------------------------------------------------
     enable_whitening = True         # Встановити True, щоб увімкнути відбілювання.
-
-    # <<< НОВЕ НАЛАШТУВАННЯ: Поріг Скасування Відбілювання >>>
-    # Якщо сума R+G+B найтемнішого пікселя МЕНША за це значення, відбілювання скасовується.
-    # Діапазон: 0 (скасує тільки ідеально чорний) до 765 (ніколи не скасує).
-    # Рекомендовані значення: 30-100 для ігнорування темних артефактів.
     whitening_cancel_threshold_sum = 500 # Мін. сума RGB для скасування (0-765)
 
     # --- Видалення білого фону та Обрізка ---
@@ -1145,23 +1268,21 @@ if __name__ == "__main__":
     crop_absolute_symmetry = False   # True для абсолютної симетрії обрізки.
     crop_axes_symmetry = False      # True для симетрії по осях обрізки (якщо absolute = False).
 
-    # --- Інформаційна перевірка периметру ---
-    perimeter_check_margin = 1       # Відступ для перевірки (px), 0 = вимкнено.
-    padding_percent = 5.0            # Відсоток полів навколо кожного зобр. (0 = вимкнено).
+    # --- Інформаційна перевірка периметру та Додавання полів ---
+    perimeter_check_margin = 0       # Відступ для перевірки (px), 0 = вимкнено.
+    padding_percent = 0.0            # Відсоток полів навколо кожного зобр. (0 = вимкнено).
 
     # --------------------------------------------------------------------------
     # |              ЕТАП 2: ПІДГОТОВКА ДО КОЛАЖУ                            |
     # --------------------------------------------------------------------------
-    proportional_placement_enabled = True # True, щоб увімкнути пропорційне масштабування. При вимкненому йде спввідн. пікселів.
-    placement_ratios_list = [1,1]    # Список коефіцієнтів [1.0, 0.8, 1.0]
-
-
+    proportional_placement_enabled = False # True, щоб увімкнути пропорційне масштабування.
+    placement_ratios_list = [1.0, 0.8, 1.0] # Список коефіцієнтів (якщо proportional = True)
 
     # --------------------------------------------------------------------------
     # |                  ЕТАП 3: СТВОРЕННЯ КОЛАЖУ                             |
     # --------------------------------------------------------------------------
     forced_grid_cols = 0             # Кількість стовпців (0 = авто).
-    spacing_percent = 2.0            # Відсоток відступу між зображеннями, відсотки від найбільшого
+    spacing_percent = 2.0            # Відсоток відступу між зображеннями.
 
     # --------------------------------------------------------------------------
     # | ЕТАП 4: ТРАНСФОРМАЦІЇ ФІНАЛЬНОГО КОЛАЖУ                             |
@@ -1186,8 +1307,12 @@ if __name__ == "__main__":
     # --- Виклик основної функції обробки з усіма налаштуваннями ---
     run_processing(
         source_dir=source_directory, output_filename=output_filename,
+        # <<< Передача нових параметрів >>>
+        preprocess_max_width=preprocess_max_width,
+        preprocess_max_height=preprocess_max_height,
+        # --- Решта параметрів ---
         enable_whitening=enable_whitening,
-        whitening_cancel_threshold_sum=whitening_cancel_threshold_sum, # <<< Передача нового параметра
+        whitening_cancel_threshold_sum=whitening_cancel_threshold_sum,
         forced_cols=forced_grid_cols,
         perimeter_margin=perimeter_check_margin, padding_percent=padding_percent,
         white_tolerance=white_tolerance, spacing_percent=spacing_percent, quality=jpeg_save_quality,
