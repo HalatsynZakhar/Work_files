@@ -288,9 +288,6 @@ def crop_image(img, symmetric_axes=False, symmetric_absolute=False):
 
             if not bbox:
                 print("  - Не знайдено непрозорих пікселів (bbox is None). Зображення прозоре або помилка. Обрізку пропущено.")
-                # Якщо ми конвертували в RGBA, то img_rgba - це новий об'єкт, який треба повернути
-                # Якщо не конвертували, то img_rgba - це копія, закриється автоматично, повертаємо оригінал img
-                # <<< ВИПРАВЛЕНО ЛОГІКУ ПОВЕРНЕННЯ >>>
                 # Якщо bbox не знайдено, це означає, що або зображення повністю прозоре,
                 # або сталася помилка. В обох випадках краще повернути ОРИГІНАЛЬНИЙ об'єкт 'img',
                 # оскільки операція обрізки не відбулася (або не мала сенсу).
@@ -366,9 +363,6 @@ def crop_image(img, symmetric_axes=False, symmetric_absolute=False):
             # Перевірка, чи обрізка взагалі потрібна
             if final_crop_box == (0, 0, original_width, original_height):
                  print("  - Фінальний crop_box відповідає розміру зображення. Обрізка не потрібна.")
-                 # Якщо конвертували в RGBA, повертаємо цей конвертований об'єкт
-                 # Якщо не конвертували, повертаємо оригінал img
-                 # <<< ВИПРАВЛЕНО: Повертаємо оригінал, якщо змін не було >>>
                  # Копія/конвертований img_rgba закриється автоматично.
                  return img
             else:
@@ -423,10 +417,8 @@ def add_padding(img, percent):
                 print(f"  ! Помилка convert->RGBA в add_padding: {e}")
                 return img # Повертаємо оригінал
         else:
-            # Якщо вже RGBA, копіювати не обов'язково, але безпечніше
-            # img_rgba_src = img.copy()
-            # <<< Оптимізація: не копіюємо, якщо вже RGBA >>>
-            img_rgba_src = img # Використовуємо оригінал, якщо він вже RGBA
+            # Використовуємо оригінал, якщо він вже RGBA
+            img_rgba_src = img
 
         # Створюємо новий прозорий холст
         padded_img = Image.new('RGBA', (nw, nh), (0, 0, 0, 0))
@@ -487,11 +479,7 @@ def check_perimeter_is_white(img, tolerance, margin):
                        else: img_to_check.paste(temp_rgba)
              print("    - Створено RGB копію з білим фоном для перевірки периметру (з LA).")
         elif img.mode == 'P' or img.mode == 'PA': # Palette based
-             # Конвертація в RGB може бути найкращим варіантом тут,
-             # хоча накладання на білий фон було б ідеальніше
              try:
-                  # Якщо є прозорість в палітрі, convert('RGB') може дати не білий фон
-                  # Спробуємо конвертувати в RGBA і потім накласти
                   with img.convert('RGBA') as temp_rgba:
                       img_to_check = Image.new("RGB", img.size, (255, 255, 255))
                       created_new_object = True
@@ -555,7 +543,14 @@ def check_perimeter_is_white(img, tolerance, margin):
                 # Верхні mh рядків
                 for y in range(mh):
                     for x in range(width):
-                        r, g, b = pixels[x, y][:3]
+                        pixel_data = pixels[x, y]
+                        # Перевірка, що це RGB (кортеж з 3+ елементів або int для L)
+                        if isinstance(pixel_data, (tuple, list)) and len(pixel_data) >= 3:
+                             r, g, b = pixel_data[:3]
+                        elif isinstance(pixel_data, int): # Режим 'L'
+                             r, g, b = pixel_data, pixel_data, pixel_data
+                        else: # Неочікуваний формат
+                             is_perimeter_white = False; break # Вважаємо не білим
                         if not (r >= cutoff and g >= cutoff and b >= cutoff):
                             print(f"    - Знайдено не білий піксель (верх): ({x},{y}) = {(r,g,b)}")
                             is_perimeter_white = False; break
@@ -564,7 +559,10 @@ def check_perimeter_is_white(img, tolerance, margin):
                 if is_perimeter_white:
                     for y in range(height - mh, height):
                         for x in range(width):
-                            r, g, b = pixels[x, y][:3]
+                            pixel_data = pixels[x, y]
+                            if isinstance(pixel_data, (tuple, list)) and len(pixel_data) >= 3: r, g, b = pixel_data[:3]
+                            elif isinstance(pixel_data, int): r, g, b = pixel_data, pixel_data, pixel_data
+                            else: is_perimeter_white = False; break
                             if not (r >= cutoff and g >= cutoff and b >= cutoff):
                                 print(f"    - Знайдено не білий піксель (низ): ({x},{y}) = {(r,g,b)}")
                                 is_perimeter_white = False; break
@@ -573,7 +571,10 @@ def check_perimeter_is_white(img, tolerance, margin):
                 if is_perimeter_white:
                     for x in range(mw):
                         for y in range(mh, height - mh):
-                              r, g, b = pixels[x, y][:3]
+                              pixel_data = pixels[x, y]
+                              if isinstance(pixel_data, (tuple, list)) and len(pixel_data) >= 3: r, g, b = pixel_data[:3]
+                              elif isinstance(pixel_data, int): r, g, b = pixel_data, pixel_data, pixel_data
+                              else: is_perimeter_white = False; break
                               if not (r >= cutoff and g >= cutoff and b >= cutoff):
                                    print(f"    - Знайдено не білий піксель (ліво): ({x},{y}) = {(r,g,b)}")
                                    is_perimeter_white = False; break
@@ -582,7 +583,10 @@ def check_perimeter_is_white(img, tolerance, margin):
                 if is_perimeter_white:
                     for x in range(width - mw, width):
                         for y in range(mh, height - mh):
-                              r, g, b = pixels[x, y][:3]
+                              pixel_data = pixels[x, y]
+                              if isinstance(pixel_data, (tuple, list)) and len(pixel_data) >= 3: r, g, b = pixel_data[:3]
+                              elif isinstance(pixel_data, int): r, g, b = pixel_data, pixel_data, pixel_data
+                              else: is_perimeter_white = False; break
                               if not (r >= cutoff and g >= cutoff and b >= cutoff):
                                    print(f"    - Знайдено не білий піксель (право): ({x},{y}) = {(r,g,b)}")
                                    is_perimeter_white = False; break
@@ -717,7 +721,8 @@ def rename_and_convert_images(
     if enable_renaming_actual := bool(article_name and article_name.strip()): print(f"Артикул: {article_name}")
     else: print(f"Перейменування за артикулом: Вимкнено")
     print(f"Видалення оригіналів: {'Так' if delete_originals else 'Ні'}")
-    if perform_preresize := (preresize_width > 0 and preresize_height > 0): print(f"Перед. ресайз: Так ({preresize_width}x{preresize_height}px)")
+    if perform_preresize := (preresize_width > 0 or preresize_height > 0): # Оновлено умову - хоча б один > 0
+         print(f"Перед. ресайз (зменшення, якщо більше): Так (Ш: {preresize_width or 'N/A'}, В: {preresize_height or 'N/A'}px)")
     else: print(f"Перед. ресайз: Ні")
     print(f"Відбілювання: {'Так' if enable_whitening else 'Ні'}")
     if enable_whitening: print(f"  - Поріг скасування відбілювання (мін. сума RGB): {whitening_cancel_threshold}")
@@ -730,7 +735,7 @@ def rename_and_convert_images(
     perform_perimeter_check = perimeter_margin > 0
     perform_padding = padding_percent > 0
     print(f"Перевірка периметра для полів: {'Так (' + str(perimeter_margin) + 'px)' if perform_perimeter_check else 'Ні'}")
-    print(f"Відсоток полів: {str(padding_percent) + '%' if perform_padding else 'Ні'} (якщо умова перевірки периметра виконана або перевірка вимкнена)")
+    print(f"Відсоток полів: {str(padding_percent) + '%' if perform_padding else 'Ні'} (якщо умова перевірки периметра виконана АБО перевірка вимкнена, ТА якщо обрізка була суттєвою)") # Уточнено умову
     if use_force_aspect_ratio: print(f"Примусове співвідношення сторін: Так ({valid_aspect_ratio[0]}:{valid_aspect_ratio[1]})")
     else: print(f"Примусове співвідношення сторін: Ні")
     use_max_dimensions = max_output_width > 0 or max_output_height > 0
@@ -784,6 +789,8 @@ def rename_and_convert_images(
         print(f"\n[{file_index+1}/{len(files)}] Обробка файлу: {file}")
         img_current = None # Поточний об'єкт зображення в конвеєрі
         success_flag = False # Прапор успішного збереження поточного файлу
+        pre_crop_width, pre_crop_height = 0, 0 # <<< Розміри до обрізки
+        cropped_image_dimensions = None        # <<< Розміри після обрізки (для логування)
 
         try:
             # 1. Бекап
@@ -810,75 +817,63 @@ def rename_and_convert_images(
             # Старий img_current закривається, якщо повертається новий об'єкт
 
             # 3. Перед. ресайз (ЗМІНЕНА ЛОГІКА: тільки зменшення, без холста)
-            if perform_preresize:  # perform_preresize = (preresize_width > 0 and preresize_height > 0)
-             print(
-                 f"  - Крок Pre-Resize (зменшення до макс. {preresize_width}x{preresize_height}, якщо більше)...")
-             prev_img = img_current
-             ow, oh = prev_img.size
+            if perform_preresize: # perform_preresize = (preresize_width > 0 or preresize_height > 0)
+                 prw = preresize_width if preresize_width and preresize_width > 0 else float('inf')
+                 prh = preresize_height if preresize_height and preresize_height > 0 else float('inf')
+                 print(f"  - Крок Pre-Resize (зменшення до макс. {preresize_width or 'N/A'}x{preresize_height or 'N/A'}, якщо більше)...")
+                 prev_img = img_current
+                 ow, oh = prev_img.size
 
-             # Перевіряємо, чи потрібно взагалі зменшувати
-             needs_resizing = (ow > preresize_width or oh > preresize_height) and ow > 0 and oh > 0
+                 # Перевіряємо, чи потрібно взагалі зменшувати
+                 needs_resizing = (ow > prw or oh > prh) and ow > 0 and oh > 0
 
-             if needs_resizing:
-                 resized_img_pr = None  # Для результату ресайзу
-                 try:
-                     # Розраховуємо коефіцієнт масштабування для зменшення
-                     ratio = 1.0
-                     # Використовуємо ТІЛЬКИ позитивні значення preresize для розрахунку ratio
-                     # Якщо preresize_width=0, ця умова не спрацює, і ширина не впливатиме на ratio
-                     if preresize_width > 0 and ow > preresize_width:
-                         ratio = min(ratio, preresize_width / ow)
-                     # Якщо preresize_height=0, ця умова не спрацює
-                     if preresize_height > 0 and oh > preresize_height:
-                         ratio = min(ratio, preresize_height / oh)
+                 if needs_resizing:
+                     resized_img_pr = None  # Для результату ресайзу
+                     try:
+                         # Розраховуємо коефіцієнт масштабування для зменшення
+                         ratio = 1.0
+                         if ow > prw: ratio = min(ratio, prw / ow)
+                         if oh > prh: ratio = min(ratio, prh / oh)
 
-                     # Переконуємось, що масштабування справді потрібне (ratio < 1.0)
-                     if ratio < 1.0:
-                         nw = max(1, int(round(ow * ratio)))
-                         nh = max(1, int(round(oh * ratio)))
-                         print(f"    - Поточний розмір ({ow}x{oh}) перевищує ліміти.")
-                         print(f"    - Зменшення до {nw}x{nh} (ratio: {ratio:.4f})...")
-                         resized_img_pr = prev_img.resize((nw, nh), Image.Resampling.LANCZOS)
+                         # Переконуємось, що масштабування справді потрібне (ratio < 1.0)
+                         if ratio < 1.0:
+                             nw = max(1, int(round(ow * ratio)))
+                             nh = max(1, int(round(oh * ratio)))
+                             print(f"    - Поточний розмір ({ow}x{oh}) перевищує ліміти.")
+                             print(f"    - Зменшення до {nw}x{nh} (ratio: {ratio:.4f})...")
+                             resized_img_pr = prev_img.resize((nw, nh), Image.Resampling.LANCZOS)
 
-                         # Замінюємо img_current новим зменшеним зображенням
-                         img_current = resized_img_pr;
-                         resized_img_pr = None  # Перепризначили
-                         print(f"    - Новий розмір: {img_current.size}, Режим: {img_current.mode}")
-                         prev_img.close()  # Закриваємо попередній стан (який був більшим)
-                     else:
-                         # Це може статися, якщо ow > width і oh > height, але після розрахунку ratio = 1.0 (рідкісний випадок)
-                         print("    - Розрахунок показав, що зменшення не потрібне (ratio=1.0).")
-                         img_current = prev_img  # Залишаємо як було
-                 except Exception as pr_err:
-                     print(f"   ! Помилка під час попереднього ресайзу (зменшення): {pr_err}")
-                     if resized_img_pr:  # Якщо помилка після створення об'єкту
-                         try:
-                             resized_img_pr.close()
-                         except Exception:
-                             pass
-                     img_current = prev_img  # Повертаємо старий стан у разі помилки
-                 finally:
-                     # Переконуємось, що тимчасовий об'єкт закритий, якщо він не став img_current
-                     if resized_img_pr:
-                         try:
-                             resized_img_pr.close()
-                         except Exception:
-                             pass
-             else:
-                 print(f"    - Зображення ({ow}x{oh}) вже в межах лімітів. Зменшення не потрібне.")
-                 # img_current залишається без змін
+                             # Замінюємо img_current новим зменшеним зображенням
+                             img_current = resized_img_pr;
+                             resized_img_pr = None  # Перепризначили
+                             print(f"    - Новий розмір: {img_current.size}, Режим: {img_current.mode}")
+                             prev_img.close()  # Закриваємо попередній стан (який був більшим)
+                         else:
+                             # Це може статися, якщо ow > width і oh > height, але після розрахунку ratio = 1.0 (рідкісний випадок)
+                             print("    - Розрахунок показав, що зменшення не потрібне (ratio=1.0).")
+                             img_current = prev_img  # Залишаємо як було
+                     except Exception as pr_err:
+                         print(f"   ! Помилка під час попереднього ресайзу (зменшення): {pr_err}")
+                         if resized_img_pr:  # Якщо помилка після створення об'єкту
+                             try: resized_img_pr.close()
+                             except Exception: pass
+                         img_current = prev_img  # Повертаємо старий стан у разі помилки
+                     finally:
+                         # Переконуємось, що тимчасовий об'єкт закритий, якщо він не став img_current
+                         if resized_img_pr:
+                             try: resized_img_pr.close()
+                             except Exception: pass
+                 else:
+                     print(f"    - Зображення ({ow}x{oh}) вже в межах лімітів. Зменшення не потрібне.")
+                     # img_current залишається без змін
             else:
-             print("  - Крок Pre-Resize: вимкнено.")
+                 print("  - Крок Pre-Resize: вимкнено.")
 
-            # --- Далі йде інша частина конвеєра (Відбілювання і т.д.) ---
-            # Перевірка на нульовий розмір після цього кроку (на випадок помилки)
+            # Перевірка на нульовий розмір після цього кроку
             if img_current.size[0] <= 0 or img_current.size[1] <= 0:
                  print(f"  ! Помилка або нульовий розмір після Pre-Resize ({img_current.size}). Пропускаємо файл.")
                  error_files_count += 1;
-                 img_current.close();
-                 img_current = None;
-                 continue
-
+                 img_current.close(); img_current = None; continue
 
             # 4. Відбілювання
             if enable_whitening:
@@ -900,19 +895,26 @@ def rename_and_convert_images(
             else: print("  - Крок Whitening: вимкнено.")
 
 
-            # 5. Перевірка периметра (виконується ПЕРЕД видаленням фону/обрізкою)
+            # 5. Перевірка периметра (для умовних полів)
             should_add_padding_conditionally = False
             if perform_perimeter_check and perform_padding:
                  print("  - Крок Check Perimeter (для умовних полів)...")
                  # Використовуємо white_tolerance, якщо видалення фону увімкнено, інакше 0
                  current_perimeter_tolerance = white_tolerance if enable_bg_removal_and_crop else 0
                  should_add_padding_conditionally = check_perimeter_is_white(img_current, current_perimeter_tolerance, perimeter_margin)
-                 print(f"    - Результат перевірки: Умовні поля {'будуть додані' if should_add_padding_conditionally else 'не будуть додані'}")
+                 print(f"    - Результат перевірки: Умовні поля {'будуть додані (якщо обрізка суттєва)' if should_add_padding_conditionally else 'не будуть додані'}")
             elif perform_padding:
-                 print("  - Крок Check Perimeter: вимкнено, але Padding увімкнено -> Поля будуть додані безумовно.")
-                 should_add_padding_conditionally = True # Додаємо поля, якщо padding увімкнено
+                 print("  - Крок Check Perimeter: вимкнено, але Padding увімкнено -> Поля будуть додані (якщо обрізка суттєва).")
+                 should_add_padding_conditionally = True # Додаємо поля, якщо padding увімкнено, АЛЕ з умовою далі
             else: print("  - Крок Check Perimeter/Padding: вимкнено або не потрібно.")
 
+            # Зберігаємо розміри перед кроками 6 і 7
+            if img_current:
+                pre_crop_width, pre_crop_height = img_current.size
+                print(f"  - Розмір перед видаленням фону/обрізкою: {pre_crop_width}x{pre_crop_height}")
+            else:
+                print("  ! Попередження: Немає зображення перед кроком видалення фону/обрізки.")
+                error_files_count += 1; continue # Пропускаємо файл
 
             # 6. Видалення фону
             if enable_bg_removal_and_crop:
@@ -950,38 +952,92 @@ def rename_and_convert_images(
                           print("    - Обрізка не змінила зображення (не було чого обрізати або помилка).")
                           img_current = prev_img
                      print(f"    - Розмір після обрізки: {img_current.size}, Режим: {img_current.mode}")
+                     if img_current: # Збережемо розмір після обрізки для логування
+                          cropped_image_dimensions = img_current.size
                  except Exception as crop_err:
                       print(f"   !! Загальна помилка виклику crop_image: {crop_err}")
                       img_current = prev_img
-            # Перевірка на нульовий розмір після базової обробки
-            if img_current.size[0] <= 0 or img_current.size[1] <= 0:
-                 print(f"  ! Помилка або нульовий розмір після фон/обрізка ({img_current.size}). Пропускаємо файл.")
-                 error_files_count += 1; img_current.close(); img_current=None; continue
+                      if img_current: cropped_image_dimensions = img_current.size # Зберігаємо поточний розмір
+            else: # Якщо обрізка вимкнена, "розмір після обрізки" = "розмір до обрізки"
+                 if img_current:
+                      cropped_image_dimensions = img_current.size
 
-            # 8. Додавання полів
-            # Додаємо поля, якщо прапор `should_add_padding_conditionally` встановлений
+            # Перевірка на нульовий розмір після базової обробки
+            if img_current is None or img_current.size[0] <= 0 or img_current.size[1] <= 0:
+                 size_info = img_current.size if img_current else "(None)"
+                 print(f"  ! Помилка або нульовий розмір після фон/обрізка ({size_info}). Пропускаємо файл.")
+                 if img_current: img_current.close(); img_current = None
+                 error_files_count += 1; continue
+
+            # 8. Додавання полів (З ВИПРАВЛЕНОЮ ЛОГІКОЮ)
+            apply_padding_final = False # Прапор, чи дійсно додаємо поля
             if perform_padding and should_add_padding_conditionally:
                  print(f"  - Крок Padding ({padding_percent}%)...")
-                 prev_img = img_current
-                 try:
-                      img_padded = add_padding(prev_img, padding_percent)
-                      if img_padded is not prev_img:
-                           print("    - Поля додано.")
-                           img_current = img_padded
-                           prev_img.close()
-                      else:
-                           print("    - Додавання полів не змінило зображення (відсоток=0 або помилка).")
-                           img_current = prev_img
-                      print(f"    - Розмір після додавання полів: {img_current.size}, Режим: {img_current.mode}")
-                 except Exception as pad_err:
-                      print(f"   !! Загальна помилка виклику add_padding: {pad_err}")
-                      img_current = prev_img
-            else: print("  - Крок Padding: пропущено (або умова не виконана).")
-            # Перевірка на нульовий розмір після полів
-            if img_current.size[0] <= 0 or img_current.size[1] <= 0:
-                 print(f"  ! Помилка або нульовий розмір після полів ({img_current.size}). Пропускаємо.")
-                 error_files_count += 1; img_current.close(); img_current=None; continue
+                 current_w, current_h = img_current.size
 
+                 # --- ПОЧАТОК НОВОЇ ПЕРЕВІРКИ РОЗМІРУ ---
+                 if current_w > 0 and current_h > 0 and padding_percent > 0 and (pre_crop_width > 0 and pre_crop_height > 0):
+                     padding_pixels = int(round(max(current_w, current_h) * (padding_percent / 100.0)))
+                     if padding_pixels > 0:
+                         potential_padded_w = current_w + 2 * padding_pixels
+                         potential_padded_h = current_h + 2 * padding_pixels
+
+                         print(f"    - Перевірка розміру:")
+                         print(f"      - До обрізки:        {pre_crop_width}x{pre_crop_height}")
+                         if cropped_image_dimensions:
+                             print(f"      - Після обрізки:     {cropped_image_dimensions[0]}x{cropped_image_dimensions[1]}")
+                         else: # Якщо крок обрізки не запускався
+                             print(f"      - Після обрізки:     {current_w}x{current_h} (поточний)")
+                         print(f"      - Потенційний з полями:{potential_padded_w}x{potential_padded_h}")
+
+                         # <<< ВИПРАВЛЕНА УМОВА >>>
+                         # Додаємо поля ТІЛЬКИ якщо новий розмір НЕ БІЛЬШИЙ за розмір до обрізки
+                         if potential_padded_w <= pre_crop_width and potential_padded_h <= pre_crop_height:
+                             print("      - РІШЕННЯ: Новий розмір <= Розміру до обрізки. Обрізка була суттєвою. Поля ДОДАЮТЬСЯ.")
+                             apply_padding_final = True
+                         else:
+                             print("      - РІШЕННЯ: Новий розмір > Розміру до обрізки (обрізка була незначною). Поля ПРОПУСКАЮТЬСЯ.")
+                             apply_padding_final = False
+                     else:
+                         print("    - Розрахунок полів дав 0 пікселів. Поля не додаються.")
+                         apply_padding_final = False
+                 else:
+                     # Якщо поточний розмір нульовий, або відсоток 0, або pre_crop розміри не вдалося отримати
+                     print(f"    - Поля не додаються (поточний розмір {current_w}x{current_h}, відсоток {padding_percent}, розмір до обрізки {pre_crop_width}x{pre_crop_height}).")
+                     apply_padding_final = False
+                 # --- КІНЕЦЬ НОВОЇ ПЕРЕВІРКИ РОЗМІРУ ---
+
+                 # Виконуємо додавання полів тільки якщо apply_padding_final = True
+                 if apply_padding_final:
+                     prev_img = img_current
+                     try:
+                          img_padded = add_padding(prev_img, padding_percent) # Використовуємо існуючу функцію
+                          if img_padded is not prev_img:
+                               img_current = img_padded
+                               prev_img.close()
+                          else:
+                               # Ця гілка може спрацювати якщо add_padding поверне оригінал (напр. percent=0 всередині)
+                               print("    - Додавання полів не змінило зображення.")
+                               img_current = prev_img # Залишаємо як було
+                          print(f"    - Розмір після додавання полів: {img_current.size}, Режим: {img_current.mode}")
+                     except Exception as pad_err:
+                          print(f"   !! Загальна помилка виклику add_padding: {pad_err}")
+                          img_current = prev_img # Повертаємо попередній
+                 # else: Повідомлення про пропуск вже було вище
+
+            elif perform_padding and not should_add_padding_conditionally:
+                 # Цей випадок означає, що perimeter_check був False
+                 print("  - Крок Padding: пропущено (умова перевірки периметру не виконана).")
+            else:
+                 # Padding вимкнено (perform_padding = False)
+                 print("  - Крок Padding: вимкнено.")
+
+            # Перевірка на нульовий розмір після полів
+            if img_current is None or img_current.size[0] <= 0 or img_current.size[1] <= 0:
+                 size_info = img_current.size if img_current else "(None)"
+                 print(f"  ! Помилка або нульовий розмір після полів ({size_info}). Пропускаємо.")
+                 if img_current: img_current.close(); img_current=None;
+                 error_files_count += 1; continue
 
             # 9. Примусове співвідношення сторін
             if use_force_aspect_ratio and valid_aspect_ratio:
@@ -991,11 +1047,11 @@ def rename_and_convert_images(
                 try:
                     target_aspect_w, target_aspect_h = valid_aspect_ratio
                     current_w, current_h = prev_img.size
-                    if current_h == 0: raise ValueError("Висота нульова")
+                    if current_h == 0 or target_aspect_h == 0: raise ValueError("Нульова висота в співвідношенні")
                     current_aspect = current_w / current_h
                     desired_aspect = target_aspect_w / target_aspect_h
 
-                    if abs(current_aspect - desired_aspect) > 0.01:
+                    if abs(current_aspect - desired_aspect) > 0.01: # Поріг для уникнення дій через float помилки
                         print(f"    - Поточне {current_aspect:.3f}, Цільове: {desired_aspect:.3f}. Потрібна зміна.")
                         if current_aspect > desired_aspect: # Зашироке -> збільшуємо висоту холсту
                             target_w = current_w; target_h = int(round(current_w / desired_aspect))
@@ -1022,24 +1078,29 @@ def rename_and_convert_images(
                         img_current = ratio_canvas_inner; ratio_canvas_inner = None # Перепризначили
                         print(f"    - Новий розмір після зміни співвідношення: {img_current.size}")
                         prev_img.close() # Закриваємо попередній стан
+                        # Закриваємо temp_rgba_ratio, якщо він створювався і відрізняється від prev_img
+                        if temp_rgba_ratio and temp_rgba_ratio is not prev_img: temp_rgba_ratio.close()
                     else:
                          print("    - Співвідношення сторін вже відповідає цільовому.")
                          img_current = prev_img # Залишаємо як було
                 except Exception as ratio_err:
                     print(f"    !! Помилка зміни співвідношення сторін: {ratio_err}")
-                    img_current = prev_img
+                    img_current = prev_img # Повертаємо попередній стан
                 finally:
                     if ratio_canvas_inner: ratio_canvas_inner.close()
-                    if temp_rgba_ratio: temp_rgba_ratio.close()
+                    if temp_rgba_ratio and temp_rgba_ratio is not prev_img: temp_rgba_ratio.close()
             else: print("  - Крок Aspect Ratio: вимкнено.")
             # Перевірка на нульовий розмір
-            if img_current.size[0] <= 0 or img_current.size[1] <= 0:
-                 print(f"  ! Помилка або нульовий розмір після співвідношення ({img_current.size}). Пропускаємо.")
-                 error_files_count += 1; img_current.close(); img_current=None; continue
-
+            if img_current is None or img_current.size[0] <= 0 or img_current.size[1] <= 0:
+                 size_info = img_current.size if img_current else "(None)"
+                 print(f"  ! Помилка або нульовий розмір після співвідношення ({size_info}). Пропускаємо.")
+                 if img_current: img_current.close(); img_current=None;
+                 error_files_count += 1; continue
 
             # 10. Обмеження максимальних розмірів
             if use_max_dimensions:
+                 mow = max_output_width if max_output_width and max_output_width > 0 else float('inf')
+                 moh = max_output_height if max_output_height and max_output_height > 0 else float('inf')
                  print(f"  - Крок Max Dimensions (Ш: {max_output_width or 'N/A'}, В: {max_output_height or 'N/A'})...")
                  prev_img = img_current
                  resized_img_max = None
@@ -1047,8 +1108,8 @@ def rename_and_convert_images(
                       current_w, current_h = prev_img.size
                       print(f"    - Поточний розмір: {current_w}x{current_h}")
                       scale_ratio = 1.0
-                      if max_output_width > 0 and current_w > max_output_width: scale_ratio = min(scale_ratio, max_output_width / current_w)
-                      if max_output_height > 0 and current_h > max_output_height: scale_ratio = min(scale_ratio, max_output_height / current_h)
+                      if current_w > mow: scale_ratio = min(scale_ratio, mow / current_w)
+                      if current_h > moh: scale_ratio = min(scale_ratio, moh / current_h)
 
                       if scale_ratio < 1.0:
                            nw = max(1, int(round(current_w * scale_ratio))); nh = max(1, int(round(current_h * scale_ratio)))
@@ -1062,15 +1123,16 @@ def rename_and_convert_images(
                            img_current = prev_img
                  except Exception as max_resize_err:
                       print(f"    !! Помилка зменшення розміру: {max_resize_err}")
-                      img_current = prev_img
+                      img_current = prev_img # Повертаємо попередній стан
                  finally:
                       if resized_img_max: resized_img_max.close()
             else: print("  - Крок Max Dimensions: вимкнено.")
             # Перевірка на нульовий розмір
-            if img_current.size[0] <= 0 or img_current.size[1] <= 0:
-                 print(f"  ! Помилка або нульовий розмір після обмеження ({img_current.size}). Пропускаємо.")
-                 error_files_count += 1; img_current.close(); img_current=None; continue
-
+            if img_current is None or img_current.size[0] <= 0 or img_current.size[1] <= 0:
+                 size_info = img_current.size if img_current else "(None)"
+                 print(f"  ! Помилка або нульовий розмір після обмеження ({size_info}). Пропускаємо.")
+                 if img_current: img_current.close(); img_current=None;
+                 error_files_count += 1; continue
 
             # 11. Фінальний холст АБО підготовка режиму/фону
             prev_img = img_current # Зберігаємо поточний стан
@@ -1082,7 +1144,7 @@ def rename_and_convert_images(
                  print(f"  - Крок Final Canvas ({final_exact_width}x{final_exact_height})...")
                  try:
                      bw, bh = prev_img.size
-                     if bw == 0 or bh == 0: raise ValueError("Нульовий розмір перед фінальним холстом")
+                     if bw <= 0 or bh <= 0: raise ValueError("Нульовий розмір перед фінальним холстом")
                      ratio = min(final_exact_width / bw, final_exact_height / bh)
                      nw = max(1, int(round(bw * ratio))); nh = max(1, int(round(bh * ratio)))
                      print(f"    - Масштабування вмісту до {nw}x{nh} для вписування...")
@@ -1095,7 +1157,6 @@ def rename_and_convert_images(
                           final_canvas_inner = Image.new('RGBA', (final_exact_width, final_exact_height), (0,0,0,0))
                           target_paste_mode = 'RGBA'
                      else: # jpg
-                          # <<< ПОТЕНЦІЙНЕ ДЖЕРЕЛО БІЛИХ СМУГ >>>
                           print(f"    - Створення фінального RGB холсту (фон: {jpg_background_color})")
                           final_canvas_inner = Image.new('RGB', (final_exact_width, final_exact_height), jpg_background_color)
                           target_paste_mode = 'RGB' # Вставлятимемо на RGB фон
@@ -1112,7 +1173,9 @@ def rename_and_convert_images(
                           paste_mask_fc = temp_rgba_fc.split()[-1]
                           # Якщо цільовий холст RGB, нам не потрібна RGBA версія для вставки
                           if target_paste_mode == 'RGB':
-                              image_to_paste_fc = temp_rgba_fc.convert('RGB') # Конвертуємо RGB частину
+                              # Потрібно створити RGB версію з temp_rgba_fc
+                              with temp_rgba_fc.copy() as rgba_copy_for_rgb: # Робимо копію, щоб не змінювати temp_rgba_fc
+                                   image_to_paste_fc = rgba_copy_for_rgb.convert('RGB') # Конвертуємо RGB частину
                           else: # target_paste_mode == 'RGBA'
                               image_to_paste_fc = temp_rgba_fc # Вставляємо RGBA
                      elif target_paste_mode == 'RGBA' and image_to_paste_fc.mode != 'RGBA':
@@ -1136,15 +1199,21 @@ def rename_and_convert_images(
                       traceback.print_exc()
                       img_current = prev_img # Повертаємось до попереднього стану
                  finally: # Закриваємо проміжні об'єкти цього кроку
-                      if resized_content_fc: resized_content_fc.close()
-                      if temp_rgba_fc: temp_rgba_fc.close()
-                      # image_to_paste_fc може бути == resized_content_fc або == temp_rgba_fc, закриються вище
-                      if paste_mask_fc and paste_mask_fc is not image_to_paste_fc: paste_mask_fc.close()
-                      if final_canvas_inner: final_canvas_inner.close()
-                      # Якщо temp_rgba_fc використовувався для image_to_paste_fc, він закриється вище
-                      # Але якщо image_to_paste_fc був конвертований з RGB/L і не є temp_rgba_fc
-                      if image_to_paste_fc not in [resized_content_fc, temp_rgba_fc, prev_img]:
+                      # Важливо закривати в правильному порядку або перевіряти ідентичність
+                      if paste_mask_fc and paste_mask_fc is not image_to_paste_fc and paste_mask_fc is not temp_rgba_fc:
+                           try: paste_mask_fc.close()
+                           except Exception: pass
+                      if image_to_paste_fc and image_to_paste_fc is not resized_content_fc and image_to_paste_fc is not temp_rgba_fc and image_to_paste_fc is not prev_img:
                            try: image_to_paste_fc.close()
+                           except Exception: pass
+                      if temp_rgba_fc and temp_rgba_fc is not resized_content_fc and temp_rgba_fc is not prev_img:
+                           try: temp_rgba_fc.close()
+                           except Exception: pass
+                      if resized_content_fc and resized_content_fc is not prev_img:
+                           try: resized_content_fc.close()
+                           except Exception: pass
+                      if final_canvas_inner:
+                           try: final_canvas_inner.close()
                            except Exception: pass
 
             else: # Фінальний холст не потрібен, просто готуємо режим/фон
@@ -1176,10 +1245,11 @@ def rename_and_convert_images(
                          if prev_img.mode in ('RGBA', 'LA'):
                               paste_mask_prep_inner = prev_img.split()[-1]
                          elif prev_img.mode == 'PA':
+                              # Конвертуємо в RGBA, щоб отримати маску
                               temp_rgba_prep_inner = prev_img.convert('RGBA')
                               paste_mask_prep_inner = temp_rgba_prep_inner.split()[-1]
-                              # Вставляти будемо саму палітру (Pillow впорається) або RGBA?
-                              # Краще RGBA для передбачуваності
+                              # Вставляти будемо або RGBA, або конвертований RGB
+                              # Для paste на RGB фон Pillow краще працює з RGBA джерелом
                               image_to_paste_prep_inner = temp_rgba_prep_inner
 
                          # Вставляємо на фон з маскою (якщо вона є)
@@ -1196,10 +1266,22 @@ def rename_and_convert_images(
                                print(f"    !!! Помилка конвертації в RGB: {rgb_conv_err}")
                                img_current = prev_img # Залишаємо як було
                      finally: # Закриваємо проміжні об'єкти цього блоку
-                          if prep_canvas_inner: prep_canvas_inner.close()
-                          if temp_rgba_prep_inner: temp_rgba_prep_inner.close()
-                          if paste_mask_prep_inner and paste_mask_prep_inner is not prev_img and paste_mask_prep_inner is not temp_rgba_prep_inner: paste_mask_prep_inner.close()
-                          # image_to_paste_prep_inner = prev_img або temp_rgba_prep_inner, закриються окремо
+                          if paste_mask_prep_inner and paste_mask_prep_inner is not prev_img and paste_mask_prep_inner is not temp_rgba_prep_inner:
+                               try: paste_mask_prep_inner.close()
+                               except Exception: pass
+                          if image_to_paste_prep_inner and image_to_paste_prep_inner is not prev_img and image_to_paste_prep_inner is not temp_rgba_prep_inner:
+                               try: image_to_paste_prep_inner.close()
+                               except Exception: pass
+                          if temp_rgba_prep_inner and temp_rgba_prep_inner is not prev_img:
+                               try: temp_rgba_prep_inner.close()
+                               except Exception: pass
+                          if prep_canvas_inner:
+                               try: prep_canvas_inner.close()
+                               except Exception: pass
+                          if temp_converted_prep: # Якщо була проста конвертація
+                              try: temp_converted_prep.close()
+                              except Exception: pass
+
 
             # 12. Збереження
             if img_current is None:
@@ -1221,30 +1303,41 @@ def rename_and_convert_images(
                 if output_format_lower == 'jpg':
                     save_format_name = "JPEG"
                     # Переконуємось що режим RGB (мало б бути з кроку 11)
+                    img_to_save = None
+                    must_close_img_to_save = False
                     if img_current.mode != 'RGB':
                         print(f"     ! Попередження: Режим не RGB ({img_current.mode}) перед збереженням JPG. Спроба конвертації...")
-                        with img_current.convert('RGB') as img_to_save:
-                            save_options["quality"] = jpeg_quality
-                            save_options["subsampling"] = 0
-                            save_options["progressive"] = True
-                            img_to_save.save(final_output_path, save_format_name, **save_options)
+                        img_to_save = img_current.convert('RGB')
+                        must_close_img_to_save = True
                     else:
-                        save_options["quality"] = jpeg_quality
-                        save_options["subsampling"] = 0
-                        save_options["progressive"] = True
-                        img_current.save(final_output_path, save_format_name, **save_options)
+                        img_to_save = img_current # Використовуємо поточний об'єкт
 
+                    try:
+                        save_options["quality"] = jpeg_quality
+                        save_options["subsampling"] = 0 # Найвища якість кольору
+                        save_options["progressive"] = True
+                        img_to_save.save(final_output_path, save_format_name, **save_options)
+                    finally:
+                        if must_close_img_to_save and img_to_save:
+                            img_to_save.close() # Закриваємо конвертований об'єкт
                 else: # png
                     save_format_name = "PNG"
                     # Переконуємось що режим RGBA (мало б бути з кроку 11)
+                    img_to_save = None
+                    must_close_img_to_save = False
                     if img_current.mode != 'RGBA':
                          print(f"     ! Попередження: Режим не RGBA ({img_current.mode}) перед збереженням PNG. Спроба конвертації...")
-                         with img_current.convert('RGBA') as img_to_save:
-                             save_options["compress_level"] = 6
-                             img_to_save.save(final_output_path, save_format_name, **save_options)
+                         img_to_save = img_current.convert('RGBA')
+                         must_close_img_to_save = True
                     else:
-                         save_options["compress_level"] = 6
-                         img_current.save(final_output_path, save_format_name, **save_options)
+                         img_to_save = img_current
+
+                    try:
+                         save_options["compress_level"] = 6 # Рівень стиснення (0-9)
+                         img_to_save.save(final_output_path, save_format_name, **save_options)
+                    finally:
+                         if must_close_img_to_save and img_to_save:
+                             img_to_save.close() # Закриваємо конвертований об'єкт
 
                 # Якщо збереження пройшло успішно
                 processed_files_count += 1
@@ -1311,6 +1404,7 @@ def rename_and_convert_images(
             try:
                 if os.path.exists(file_to_remove):
                     os.remove(file_to_remove); removed_count += 1
+                    print(f"  - Видалено: {os.path.basename(file_to_remove)}")
                 else: print(f"  ! Файл для видалення не знайдено: {os.path.basename(file_to_remove)}")
             except Exception as remove_error:
                 print(f"  ! Помилка видалення {os.path.basename(file_to_remove)}: {remove_error}")
@@ -1351,7 +1445,8 @@ def rename_and_convert_images(
             print("  - Крок 1: Перейменування у тимчасові імена...")
             # Перейменовуємо в тимчасові імена, ЗБЕРІГАЮЧИ оригінальну назву
             for i, (current_path, original_basename) in enumerate(sorted_files_for_rename):
-                temp_filename = f"{temp_prefix}{i}_{original_basename}{output_ext}" # Додаємо оригінал до тимч. імені
+                # Використовуємо індекс з ВІДСОРТОВАНОГО списку для тимчасового імені
+                temp_filename = f"{temp_prefix}{i}_{original_basename}{output_ext}"
                 temp_path = os.path.join(abs_output_path, temp_filename)
                 try:
                     print(f"    '{os.path.basename(current_path)}' -> '{temp_filename}'")
@@ -1380,20 +1475,18 @@ def rename_and_convert_images(
 
             if not temp_files_to_process_step2: print("  ! Немає тимчасових файлів для фінального перейменування.")
             else:
-                # Знову сортуємо тимчасові файли за їх ОРИГІНАЛЬНОЮ назвою (щоб логіка була послідовною)
-                try:
-                    all_temp_files_sorted = natsorted(temp_files_to_process_step2, key=lambda item: item[1])
-                except NameError: all_temp_files_sorted = sorted(temp_files_to_process_step2, key=lambda item: item[1])
-                except Exception as sort_err:
-                    print(f"  ! Помилка сортування тимчасових файлів: {sort_err}. Використання поточного порядку.")
-                    all_temp_files_sorted = temp_files_to_process_step2
+                # Сортуємо тимчасові файли за їх тимчасовим іменем (яке містить індекс сортування)
+                # Це гарантує обробку в тому ж порядку, в якому вони були відсортовані спочатку
+                all_temp_files_sorted = sorted(temp_files_to_process_step2, key=lambda item: os.path.basename(item[0]))
 
-                # --- **НОВА ЛОГІКА ПЕРЕЙМЕНУВАННЯ** ---
+                # --- **ЛОГІКА ПЕРЕЙМЕНУВАННЯ** ---
                 # Спочатку перевіряємо, чи існує файл з точною назвою артикулу серед тих, що обробляються
                 found_exact_match_in_list = False
-                for _, orig_bn in all_temp_files_sorted:
+                exact_match_original_basename = None
+                for _, orig_bn in all_temp_files_sorted: # Шукаємо в відсортованому списку
                     if orig_bn.lower() == article_name.lower():
                         found_exact_match_in_list = True
+                        exact_match_original_basename = orig_bn # Запам'ятовуємо точну оригінальну назву
                         print(f"  * Знайдено точний збіг для '{article_name}' (оригінал: '{orig_bn}').")
                         break
                 if not found_exact_match_in_list:
@@ -1408,41 +1501,43 @@ def rename_and_convert_images(
                     target_path = None
                     assign_base = False # Чи присвоювати базове ім'я цьому файлу?
 
-                    # Чи є цей файл точною відповідністю артикулу?
+                    # Чи є цей файл точним збігом артикулу?
                     is_exact_match = original_basename.lower() == article_name.lower()
 
                     # Умова 1: Якщо цей файл є точним збігом І базове ім'я ще не присвоєно
                     if is_exact_match and not base_name_assigned:
                         assign_base = True
+                        print(f"  * Присвоєння базового імені '{article_name}' файлу з точним збігом '{original_basename}'.")
                     # Умова 2: Якщо точного збігу НЕ було знайдено ВЗАГАЛІ У СПИСКУ,
                     # І базове ім'я ще не присвоєно (тобто це ПЕРШИЙ файл у циклі)
                     elif not found_exact_match_in_list and not base_name_assigned:
                         assign_base = True
-                        print(f"  * Перший файл '{original_basename}' отримає базове ім'я '{article_name}', оскільки точного збігу не було.")
+                        print(f"  * Присвоєння базового імені '{article_name}' першому файлу '{original_basename}', оскільки точного збігу не було.")
 
-                    # Присвоєння імені
+                    # Визначення фінального імені
                     if assign_base:
                         target_filename = f"{article_name}{output_ext}"
                         target_path = os.path.join(abs_output_path, target_filename)
                         # Перевірка конфлікту перед присвоєнням базового імені
-                        if os.path.normcase(target_path) in occupied_final_names or os.path.exists(target_path):
+                        norm_target_path = os.path.normcase(target_path)
+                        if norm_target_path in occupied_final_names or (os.path.exists(target_path) and temp_path != target_path): # Додано перевірку temp_path != target_path
                             print(f"  ! Конфлікт: Базове ім'я '{target_filename}' зайняте/існує. Файл '{os.path.basename(temp_path)}' буде пронумеровано.")
                             assign_base = False # Не вдалося присвоїти базове, переходимо до нумерації
                         else:
                             base_name_assigned = True # Успішно резервуємо базове ім'я
+                            # Якщо базове ім'я присвоєно, лічильник НЕ збільшуємо
                     # else: # Якщо не базове ім'я - генеруємо нумероване
                     # Цей блок тепер виконується, якщо assign_base = False
                     if not assign_base:
                         # Генеруємо ім'я article_name_counter
-                        # Навіть якщо файл був is_exact_match, але base_name_assigned вже True, він отримає номер
-                        # Або якщо це не перший файл у випадку відсутності точного збігу
                         while True:
                             target_filename = f"{article_name}_{numeric_counter}{output_ext}"
                             target_path = os.path.join(abs_output_path, target_filename)
-                            if os.path.normcase(target_path) not in occupied_final_names and not os.path.exists(target_path):
+                            norm_target_path = os.path.normcase(target_path)
+                            if norm_target_path not in occupied_final_names and not (os.path.exists(target_path) and temp_path != target_path): # Додано перевірку temp_path != target_path
                                 break # Знайшли вільне ім'я
                             numeric_counter += 1
-                        numeric_counter += 1 # Готуємо лічильник для наступного файлу
+                        numeric_counter += 1 # Готуємо лічильник для НАСТУПНОГО файлу, ЯКИЙ БУДЕ НУМЕРОВАНИМ
 
                     # Виконуємо перейменування
                     try:
@@ -1453,9 +1548,7 @@ def rename_and_convert_images(
                     except Exception as rename_error:
                         print(f"  ! Помилка фінального перейменування '{os.path.basename(temp_path)}' -> '{target_filename}': {rename_error}")
                         rename_step2_errors += 1
-                        # Якщо була помилка, можливо, варто видалити цей шлях зі списку зайнятих? Але це може бути ризиковано.
-                        # Наразі залишаємо як є, але може залишитись "дірка" в нумерації.
-            # --- **КІНЕЦЬ НОВОЇ ЛОГІКИ** ---
+            # --- **КІНЕЦЬ ЛОГІКИ ПЕРЕЙМЕНУВАННЯ** ---
 
             print(f"\n  - Перейменовано файлів: {renamed_final_count}. Помилок на кроці 2 (фінальне перейменування): {rename_step2_errors}.")
 
@@ -1494,14 +1587,16 @@ if __name__ == "__main__":
     whitening_cancel_threshold_sum = 550    # Мін. сума RGB для скасування (0-765). 0=завжди скасує (крім білого), 765=ніколи не скасує.
 
     # === Видалення фону / Обрізка (Працює тільки якщо white_tolerance НЕ None) ===
-    white_tolerance = 0                    # Допуск білого (0-255, 0=тільки чистий білий, None=вимкнено)
+    white_tolerance = 10                   # Допуск білого (0-255, 0=тільки чистий білий, None=вимкнено)
     # --- НАЛАШТУВАННЯ ОБРІЗКИ (якщо white_tolerance НЕ None) ---
     crop_absolute_symmetry = True          # Абсолютна симетрія від країв зображення (True/False)
     crop_axes_symmetry = False              # Симетрія по осях відносно центру вмісту (True/False, діє якщо absolute=False)
 
     # === Додавання Полів (Після обрізки/видалення фону, щоб нове зображення не упиралося в краї) ===
-    # Умовне додавання: тільки якщо периметр був білим ДО видалення фону/обрізки (якщо perimeter_check > 0)
-    perimeter_check_margin_pixels = 1       # Ширина рамки для перевірки білого периметру (px). 0=вимкнути перевірку (поля додаються завжди, якщо padding > 0)
+    # Умовне додавання:
+    # 1. Якщо perimeter_check_margin_pixels > 0: Тільки якщо периметр був білим ДО видалення фону/обрізки
+    # 2. Поля додаються ТІЛЬКИ якщо фінальний розмір з полями НЕ БУДЕ БІЛЬШИМ за розмір ДО обрізки.
+    perimeter_check_margin_pixels = 1       # Ширина рамки для перевірки білого периметру (px). 0=вимкнути перевірку (поля додаються за умовою 2)
     padding_percentage = 2                  # Відсоток полів (0.0 = вимкнено)
 
     # === Примусове Співвідношення Сторін (Після полів) ===
@@ -1513,7 +1608,6 @@ if __name__ == "__main__":
     max_output_height = 1500                # Макс. висота (px, 0=без обмеження)
 
     # === Фінальний Холст Точного Розміру (Після обмеження макс. розміру) ===
-    # <<< УВАГА: Цей крок може додавати білі смуги при збереженні в JPG, якщо співвідношення сторін не збігається >>>
     final_exact_width = 0                   # Точна фінальна ширина (px, 0=вимкнено)
     final_exact_height = 0                  # Точна фінальна висота (px, 0=вимкнено)
 
