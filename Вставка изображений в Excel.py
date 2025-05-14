@@ -24,7 +24,7 @@ def check_path(path, is_folder=False):
 # Путь к папке с изображениями
 folder_path = "C:/Users/ABM/Desktop/Image_1c/"
 # Путь к существующему файлу Excel
-file_path = r"C:\Users\ABM\Desktop\Робота\Акції розрахунок\59 Епіцентр офлайн акція\Епіцентр промо Мерчикам.xlsx"
+file_path = r"C:\Users\ABM\Desktop\Робота\25 Антошка статус\Статус актуальності Антошка.xlsx"
 # Проверяем существование путей
 check_path(folder_path, is_folder=True)
 check_path(file_path, is_folder=False)

@@ -211,7 +211,7 @@ if __name__ == "__main__":
         exit()
 
     # --- Налаштування користувача ---
-    folder_to_process = r"\\10.10.100.2\Foto\ROAD RIPPERS"  # !!! ВАШ шлях до папки
+    folder_to_process = r"\\10.10.100.2\Foto\KIDS TEAM"  # !!! ВАШ шлях до папки
     tolerance_for_white = 0              # !!! Допуск для білого (0-255)
     padding_percentage = 5                # !!! Відсоток полів (наприклад, 5 для 5%)
     # --- ---
