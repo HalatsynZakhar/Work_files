@@ -3,11 +3,11 @@ import shutil
 
 # ==== Настройки ====
 source_folder = r"C:\Users\ABM\Downloads\input"
-target_folder = r"C:\Users\ABM\Downloads\output"
+target_folder = r"C:\Users\ABM\Downloads\input\Новая папка (3)"
 
 # Русская 'Т' и английская 'T'
-CYRILLIC_T = 'Т'
-LATIN_T = 'T'
+CYRILLIC_T = 'С'
+LATIN_T = 'C'
 
 def main():
     if not os.path.exists(target_folder):
