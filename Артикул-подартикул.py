@@ -8,7 +8,7 @@ import pandas as pd
 EXCEL_FILE_PATH = r"C:\Users\ABM\Desktop\Лист Microsoft Excel (3).xlsx"
 
 # 2. Путь к корневой папке с файлами для переименования
-TARGET_DIRECTORY_PATH = r'\\10.10.100.2\Foto\Foto _UPDATE ARTICLE_PODARTICLE'
+TARGET_DIRECTORY_PATH = r'\\10.10.100.2\Foto\Maisto _Copy\MAISTO'
 
 # 3. Буквы столбцов в Excel
 # Важно: используйте заглавные латинские буквы
