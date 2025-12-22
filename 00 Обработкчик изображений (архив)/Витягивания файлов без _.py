@@ -22,7 +22,7 @@ def copy_files_without_underscore(input_path, output_path):
 
 
 if __name__ == "__main__":
-    input_path = r"C:\Users\ABM\Downloads\output"  # Путь к исходной папке
-    output_path = r"C:\Users\ABM\Downloads\test"  # Путь к выходной папке
+    input_path = r"\\10.10.100.2\Foto\MACHINE MAKER"  # Путь к исходной папке
+    output_path = r"C:\Users\ABM\Downloads\input\Новая папка (3)"  # Путь к выходной папке
 
     copy_files_without_underscore(input_path, output_path)
