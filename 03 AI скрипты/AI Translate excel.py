@@ -157,7 +157,7 @@ class ExcelTranslator:
 
 
 # ============= НАСТРОЙКИ =============
-FILE_PATH = r"C:\Users\ABM\Downloads\input\Переклад.xlsx" # Путь к вашему Excel файлу
+FILE_PATH = r"C:\Users\ABM\Downloads\input\импорт.xlsx" # Путь к вашему Excel файлу
 SOURCE_COLUMN = "C"  # Столбец с украинским текстом
 TARGET_COLUMN = "D"  # Столбец для русского перевода
 PAUSE_SECONDS = 0  # Пауза между запросами (секунды)
