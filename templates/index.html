@@ -1,0 +1,1710 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Мониторинг и Синхронизация цен Хорошоп</title>
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.min.css" rel="stylesheet">
+  <style>
+    :root {
+      --primary-color: #582be8;
+      --primary-hover: #451ec9;
+      --bg-light: #f6f8fa;
+      --card-border: #e1e4e8;
+    }
+    body {
+      background-color: var(--bg-light);
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+      color: #24292f;
+    }
+    .navbar-custom {
+      background: linear-gradient(135deg, #2b2d42 0%, #1a1a2e 100%);
+      color: white;
+      box-shadow: 0 4px 12px rgba(0,0,0,0.1);
+    }
+    .navbar-brand {
+      font-weight: 700;
+      letter-spacing: -0.5px;
+    }
+    .status-badge {
+      font-size: 0.85rem;
+      padding: 0.35rem 0.75rem;
+      border-radius: 50rem;
+      font-weight: 500;
+    }
+    .card-dashboard {
+      border: 1px solid var(--card-border);
+      border-radius: 12px;
+      background: #fff;
+      box-shadow: 0 2px 8px rgba(0,0,0,0.04);
+      margin-bottom: 1.5rem;
+    }
+    .product-thumb {
+      width: 54px;
+      height: 54px;
+      object-fit: contain;
+      background: #fff;
+      border: 1px solid #e9ecef;
+      border-radius: 8px;
+      transition: transform 0.2s ease, box-shadow 0.2s ease;
+      cursor: pointer;
+    }
+    .product-thumb:hover {
+      transform: scale(3.5);
+      z-index: 1050;
+      position: relative;
+      box-shadow: 0 8px 24px rgba(0,0,0,0.3);
+      border-color: var(--primary-color);
+      background: #fff;
+    }
+    .badge-locked {
+      background-color: #ffeef0;
+      color: #cf222e;
+      border: 1px solid #ffccd3;
+      font-size: 0.75rem;
+      padding: 0.25rem 0.5rem;
+      border-radius: 6px;
+      font-weight: 600;
+    }
+    .btn-lock {
+      width: 32px;
+      height: 32px;
+      padding: 0;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      border-radius: 8px;
+      font-size: 1.05rem;
+      cursor: pointer;
+      transition: all 0.15s ease-in-out;
+    }
+    .btn-lock.locked {
+      background-color: #ffeef0;
+      color: #cf222e;
+      border: 1px solid #ffccd3;
+    }
+    .btn-lock.locked:hover {
+      background-color: #fdd;
+      color: #a00;
+      transform: scale(1.08);
+    }
+    .btn-lock.unlocked {
+      background-color: #f6f8fa;
+      color: #8c959f;
+      border: 1px solid #d0d7de;
+    }
+    .btn-lock.unlocked:hover {
+      background-color: #eaeef2;
+      color: #24292f;
+      border-color: #afb8c1;
+      transform: scale(1.08);
+    }
+    .badge-partner {
+      font-size: 0.75rem;
+      padding: 0.25rem 0.5rem;
+      border-radius: 6px;
+      display: inline-block;
+      margin: 2px;
+      text-decoration: none;
+      transition: opacity 0.15s ease;
+    }
+    .badge-partner:hover {
+      opacity: 0.85;
+    }
+    .badge-partner.in-stock {
+      background-color: #dafbe1;
+      color: #1a7f37;
+      border: 1px solid #aceebb;
+    }
+    .badge-partner.out-of-stock {
+      background-color: #f6f8fa;
+      color: #57606a;
+      border: 1px solid #d0d7de;
+      text-decoration: line-through;
+    }
+    .diff-dumping {
+      color: #cf222e;
+      font-weight: 700;
+      background: #ffebe9;
+      padding: 2px 6px;
+      border-radius: 4px;
+      font-size: 0.85rem;
+    }
+    .diff-normal {
+      color: #1a7f37;
+      font-weight: 600;
+      background: #dafbe1;
+      padding: 2px 6px;
+      border-radius: 4px;
+      font-size: 0.85rem;
+    }
+    .price-input {
+      width: 105px;
+      font-weight: 600;
+      text-align: right;
+    }
+    .table-products th {
+      background-color: #f6f8fa;
+      font-weight: 600;
+      font-size: 0.85rem;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+      color: #57606a;
+      vertical-align: middle;
+      border-bottom: 2px solid #d0d7de;
+    }
+    .table-products td {
+      vertical-align: middle;
+      font-size: 0.92rem;
+    }
+    .sticky-actions {
+      position: sticky;
+      bottom: 0;
+      background: rgba(255, 255, 255, 0.95);
+      backdrop-filter: blur(8px);
+      border-top: 1px solid var(--card-border);
+      padding: 1rem 0;
+      box-shadow: 0 -4px 16px rgba(0,0,0,0.06);
+      z-index: 1000;
+    }
+  </style>
+</head>
+<body>
+
+  <!-- Sticky Top Header (Navbar + Full Filter Bar) -->
+  <header class="sticky-top shadow-sm" style="z-index: 1030;">
+    <!-- Navbar -->
+    <nav class="navbar navbar-dark navbar-custom px-3 py-2">
+      <div class="container-fluid">
+        <div class="d-flex align-items-center gap-3">
+          <a class="navbar-brand d-flex align-items-center gap-2 m-0" href="/">
+            <i class="bi bi-tag-fill text-warning"></i>
+            <span>Хорошоп Цены & Мониторинг</span>
+          </a>
+          <span class="badge bg-light text-dark px-2 py-1" style="font-size: 0.75rem;">Docker Changedetection</span>
+        </div>
+
+        <div class="d-flex align-items-center gap-2">
+          <span id="dockerStatusBadge" class="status-badge bg-secondary text-white">
+            <i class="bi bi-hdd-network"></i> Docker: проверка...
+          </span>
+          <span id="horoshopStatusBadge" class="status-badge bg-secondary text-white">
+            <i class="bi bi-shop"></i> Хорошоп: проверка...
+          </span>
+          <span id="imagesStatusBadge" class="status-badge bg-secondary text-white">
+            <i class="bi bi-images"></i> XML: проверка...
+          </span>
+
+          <button class="btn btn-outline-warning btn-sm ms-2" onclick="refreshData(true)" title="Сверить и выгрузить цены с сайта Хорошоп">
+            <i class="bi bi-cloud-arrow-down-fill"></i> Сверить цены с сайтом
+          </button>
+          <div class="btn-group btn-group-sm ms-1">
+            <button type="button" id="exportExcelBtn" class="btn btn-success fw-semibold" onclick="downloadExcelQuick()" title="Скачать Excel (лист 'Готово к импорту' с ценами согласно текущей выбранной настройке и полям)">
+              <i class="bi bi-file-earmark-excel-fill me-1"></i> Скачать Excel
+            </button>
+            <button type="button" class="btn btn-success dropdown-toggle dropdown-toggle-split" data-bs-toggle="dropdown" aria-expanded="false" title="Настройки экспорта">
+              <span class="visually-hidden">Настройки экспорта</span>
+            </button>
+            <ul class="dropdown-menu dropdown-menu-end shadow">
+              <li><h6 class="dropdown-header"><i class="bi bi-file-earmark-excel text-success me-1"></i> Выгрузка в Excel</h6></li>
+              <li>
+                <a class="dropdown-item py-2" href="#" onclick="downloadExcelQuick(); return false;">
+                  <i class="bi bi-download text-success me-2"></i> Скачать по текущим полям таблицы
+                </a>
+              </li>
+              <li><hr class="dropdown-divider"></li>
+              <li>
+                <a class="dropdown-item py-2" href="#" onclick="openExportConfigModal(); return false;">
+                  <i class="bi bi-sliders text-primary me-2"></i> <strong>Настроить поля и стратегию...</strong>
+                </a>
+              </li>
+            </ul>
+          </div>
+        </div>
+      </div>
+    </nav>
+
+    <!-- Header Filter & Action Bar (Шапка с фильтрами) -->
+    <div class="header-filter-bar py-2 px-3 bg-white border-bottom">
+      <div class="row g-2 align-items-center">
+        <!-- 1. Поиск -->
+        <div class="col-xl-3 col-lg-3 col-md-4 col-sm-6">
+          <div class="input-group input-group-sm">
+            <span class="input-group-text bg-light text-muted"><i class="bi bi-search"></i></span>
+            <input type="text" id="searchInput" class="form-control" placeholder="Поиск: артикул, бренд, товар..." oninput="filterTable()">
+            <button class="btn btn-outline-secondary" type="button" onclick="clearSearch()" title="Очистить"><i class="bi bi-x"></i></button>
+          </div>
+        </div>
+
+        <!-- 2. Фильтр по Бренду -->
+        <div class="col-xl-2 col-lg-2 col-md-3 col-sm-6">
+          <div class="input-group input-group-sm">
+            <span class="input-group-text bg-light text-muted" title="Бренд из каталога Хорошоп"><i class="bi bi-tag-fill text-primary"></i></span>
+            <select id="filterBrand" class="form-select" onchange="filterTable()">
+              <option value="">Все бренды</option>
+            </select>
+          </div>
+        </div>
+
+        <!-- 3. Фильтр по Магазину/Партнеру -->
+        <div class="col-xl-2 col-lg-2 col-md-3 col-sm-6">
+          <div class="input-group input-group-sm">
+            <span class="input-group-text bg-light text-muted" title="Магазин конкурента"><i class="bi bi-shop"></i></span>
+            <select id="filterStore" class="form-select" onchange="filterTable()">
+              <option value="">Все магазины</option>
+            </select>
+          </div>
+        </div>
+
+        <!-- 4. Статус / Отклонение -->
+        <div class="col-xl-2 col-lg-2 col-md-3 col-sm-6">
+          <select id="filterStatus" class="form-select form-select-sm fw-semibold" onchange="filterTable()">
+            <option value="all">Все статусы (<span id="countAll">0</span>)</option>
+            <option value="our_lowest">⚠️ Наша цена НИЖЕ дилеров! (<span id="countOurLowest">0</span>)</option>
+            <option value="dumping_rrc">⚠️ Демпинг рынка (&lt; РРЦ) (<span id="countDumping">0</span>)</option>
+            <option value="synced">✓ Цена в рынке / Установлена (<span id="countSynced">0</span>)</option>
+            <option value="our_higher">📈 Наша цена выше рынка (<span id="countOurHigher">0</span>)</option>
+            <option value="our_diff">Требуют обновления (<span id="countOurDiff">0</span>)</option>
+            <option value="locked">🔒 Зафиксированные замком (<span id="countLocked">0</span>)</option>
+          </select>
+        </div>
+
+        <!-- 5. Наличие -->
+        <div class="col-xl-1 col-lg-1 col-md-2 col-sm-4">
+          <select id="filterStock" class="form-select form-select-sm" onchange="filterTable()">
+            <option value="all">Наличие: Все</option>
+            <option value="in_stock">В наличии</option>
+            <option value="out_of_stock">Нет на рынке</option>
+          </select>
+        </div>
+
+        <!-- 6. Сброс фильтров -->
+        <div class="col-auto">
+          <button class="btn btn-outline-secondary btn-sm" onclick="resetAllFilters()" title="Сбросить все фильтры">
+            <i class="bi bi-arrow-counterclockwise"></i> Сброс
+          </button>
+        </div>
+
+        <!-- 7. Стратегия и Применить -->
+        <div class="col-xl col-lg-auto col-md-12 d-flex align-items-center justify-content-end gap-2 ms-auto">
+          <select id="strategySelect" class="form-select form-select-sm" style="max-width: 260px;" onchange="applyStrategy()" title="Стратегия расчета новой цены">
+            <optgroup label="Базовые стратегии">
+              <option value="min_in_stock">1. Мин. рынок (в наличии)</option>
+              <option value="rrc">2. Строго по РРЦ</option>
+              <option value="current">3. Текущая цена сайта</option>
+            </optgroup>
+            <optgroup id="strategyPartnersGroup" label="Выставить по партнеру">
+              <option value="" disabled>Загрузка партнеров...</option>
+            </optgroup>
+          </select>
+
+          <button class="btn btn-primary btn-sm text-nowrap fw-semibold px-3" onclick="openBatchModal()">
+            <i class="bi bi-cloud-arrow-up-fill"></i> Применить (<span id="selectedCount">0</span>)
+          </button>
+        </div>
+      </div>
+    </div>
+  </header>
+
+  <div class="container-fluid px-4 py-3">
+
+    <!-- Distributor Warning & Signal Strip -->
+    <div class="d-flex flex-wrap align-items-center gap-2 mb-3">
+      <div class="card p-2 px-3 border-danger bg-danger-subtle d-flex flex-row align-items-center gap-2"
+           onclick="setQuickFilter('our_lowest')" style="cursor: pointer;"
+           title="Показать позиции, где наша цена на сайте НИЖЕ цен дилеров на рынке">
+        <i class="bi bi-exclamation-triangle-fill text-danger fs-5"></i>
+        <div>
+          <span class="small fw-bold text-danger d-block">ВНИМАНИЕ (МЫ ДИСТРИБЬЮТОР):</span>
+          <span class="small text-danger-emphasis">Наша цена ниже партнеров на рынке: <strong id="badgeBelowMarket" class="badge bg-danger text-white fs-6">0</strong></span>
+        </div>
+      </div>
+
+      <div class="card p-2 px-3 border-success bg-success-subtle d-flex flex-row align-items-center gap-2"
+           onclick="setQuickFilter('synced')" style="cursor: pointer;"
+           title="Показать позиции, где цена на сайте уже актуальна и совпадает">
+        <i class="bi bi-check-circle-fill text-success fs-5"></i>
+        <div>
+          <span class="small fw-bold text-success d-block">ЦЕНА УСТАНОВЛЕНА:</span>
+          <span class="small text-success-emphasis">Актуальны на сайте: <strong id="badgeSynced" class="badge bg-success text-white fs-6">0</strong></span>
+        </div>
+      </div>
+
+      <div class="card p-2 px-3 border-warning bg-warning-subtle d-flex flex-row align-items-center gap-2"
+           onclick="setQuickFilter('our_diff')" style="cursor: pointer;"
+           title="Показать позиции с расхождением цен, требующие установки">
+        <i class="bi bi-arrow-repeat text-warning-emphasis fs-5"></i>
+        <div>
+          <span class="small fw-bold text-warning-emphasis d-block">ТРЕБУЕТСЯ ОБНОВЛЕНИЕ:</span>
+          <span class="small text-dark">Расхождение с целевой ценой: <strong id="badgeNeedUpdate" class="badge bg-dark text-white fs-6">0</strong></span>
+        </div>
+      </div>
+    </div>
+
+    <!-- Startup File Check Warnings Alert Box -->
+    <div id="startupFilesAlert" class="card-dashboard p-3 mb-3 border-start border-4 border-warning">
+      <div class="d-flex justify-content-between align-items-center">
+        <div class="d-flex align-items-center gap-2">
+          <i class="bi bi-folder-check text-warning fs-5"></i>
+          <h6 class="m-0 fw-bold">Контроль файлов данных (data/input):</h6>
+        </div>
+        <button class="btn btn-sm btn-link text-muted text-decoration-none p-0" type="button" data-bs-toggle="collapse" data-bs-target="#filesCollapse">
+          Развернуть / Свернуть детали <i class="bi bi-chevron-down"></i>
+        </button>
+      </div>
+
+      <div class="collapse mt-2" id="filesCollapse">
+        <div class="row g-2" id="filesCheckList">
+          <!-- Заполняется динамически -->
+          <div class="col-12 text-muted small">Проверка файлов...</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Products Table Card -->
+    <div class="card-dashboard overflow-hidden mb-5">
+      <div class="table-responsive" style="max-height: 72vh;">
+        <table class="table table-hover table-products m-0 align-middle">
+          <thead class="sticky-top">
+            <tr>
+              <th style="width: 36px;" class="text-center">
+                <input type="checkbox" id="selectAllCheckbox" class="form-check-input" onchange="toggleSelectAll(this)">
+              </th>
+              <th style="width: 44px;" class="text-center" title="Зафиксировать цену (замок)">
+                <i class="bi bi-lock-fill text-muted"></i>
+              </th>
+              <th style="width: 60px;" class="text-center">Фото</th>
+              <th style="width: 125px;">Артикул</th>
+              <th>Товар и Бренд</th>
+              <th style="width: 85px;" class="text-end">РРЦ</th>
+              <th style="width: 110px;" class="text-end">Наша цена</th>
+              <th style="width: 115px;" class="text-end">Мин. рынок</th>
+              <th>Цены конкурентов</th>
+              <th style="width: 115px;" class="text-center" title="Разница между минимальной ценой рынка и ценой РРЦ (Рынок - РРЦ)">Откл. от РРЦ</th>
+              <th style="width: 125px;" class="text-center" title="Разница между ценой нашего сайта и минимальной ценой рынка (Наш сайт - Рынок)">Откл. от Нас</th>
+              <th style="width: 110px;" class="text-end">Новая цена</th>
+              <th style="width: 130px;" class="text-center">Действие</th>
+            </tr>
+          </thead>
+          <tbody id="productsTableBody">
+            <tr>
+              <td colspan="13" class="text-center py-5 text-muted">
+                <div class="spinner-border spinner-border-sm text-primary mb-2" role="status"></div>
+                <div>Загрузка данных из каталога, Docker и Хорошоп...</div>
+              </td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+  </div>
+
+  <!-- Sticky Actions Footer -->
+  <div class="sticky-actions">
+    <div class="container-fluid px-4 d-flex justify-content-between align-items-center">
+      <div class="d-flex align-items-center gap-3">
+        <span class="text-muted small">
+          Показано: <strong id="visibleCount">0</strong> из <strong id="totalItemsCount">0</strong> позиций
+        </span>
+        <span class="text-muted small">|</span>
+        <span class="text-muted small">
+          Выбрано для обновления: <strong id="footerSelectedCount" class="text-primary">0</strong>
+        </span>
+      </div>
+
+      <div class="d-flex align-items-center gap-2">
+        <button class="btn btn-outline-secondary btn-sm" onclick="selectAllNonLocked()">
+          <i class="bi bi-check-all"></i> Выбрать все доступные
+        </button>
+        <button class="btn btn-outline-secondary btn-sm" onclick="deselectAll()">
+          <i class="bi bi-x-lg"></i> Снять выбор
+        </button>
+        <button class="btn btn-primary btn-sm px-4 fw-semibold" onclick="openBatchModal()">
+          <i class="bi bi-upload"></i> Установить цены на Хорошоп
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Batch Confirmation Modal -->
+  <div class="modal fade" id="batchModal" tabindex="-1">
+    <div class="modal-dialog modal-lg modal-dialog-centered modal-dialog-scrollable">
+      <div class="modal-content">
+        <div class="modal-header bg-light">
+          <h5 class="modal-title fw-bold">
+            <i class="bi bi-cloud-arrow-up text-primary"></i> Подтверждение массовой выгрузки цен
+          </h5>
+          <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+        </div>
+        <div class="modal-body">
+          <div class="alert alert-info py-2 small mb-3">
+            <div class="d-flex align-items-center justify-content-between mb-1">
+              <span><i class="bi bi-info-circle-fill me-1"></i> Будут обновлены цены для <strong><span id="modalItemsCount">0</span></strong> выбранных товаров.</span>
+              <span id="modalStrategyInfo"></span>
+            </div>
+            <div class="text-muted" style="font-size: 0.78rem;">
+              Зафиксированные позиции (замки) автоматически защищены. Оптовые уровни (Опт 1–3) пересчитываются безопасно (опт &lt; розница).
+            </div>
+          </div>
+
+          <div class="table-responsive" style="max-height: 320px;">
+            <table class="table table-sm table-striped small align-middle">
+              <thead>
+                <tr>
+                  <th>Артикул</th>
+                  <th>Название</th>
+                  <th class="text-end">РРЦ</th>
+                  <th class="text-end">Текущая</th>
+                  <th class="text-end">Новая цена</th>
+                </tr>
+              </thead>
+              <tbody id="modalTableBody">
+                <!-- Заполняется JS -->
+              </tbody>
+            </table>
+          </div>
+        </div>
+        <div class="modal-footer bg-light">
+          <button type="button" class="btn btn-outline-secondary btn-sm" data-bs-dismiss="modal">Отмена</button>
+          <button type="button" id="modalConfirmBtn" class="btn btn-primary btn-sm px-3" onclick="executeBatchUpdate()">
+            <i class="bi bi-check2-circle"></i> Подтвердить и отправить в Хорошоп
+          </button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Export Configuration Modal (Настройка листа 'Готово к импорту' в Excel) -->
+  <div class="modal fade" id="exportConfigModal" tabindex="-1">
+    <div class="modal-dialog modal-lg modal-dialog-centered modal-dialog-scrollable">
+      <div class="modal-content shadow-lg border-0">
+        <div class="modal-header bg-success text-white">
+          <h5 class="modal-title fw-bold">
+            <i class="bi bi-file-earmark-excel-fill me-2"></i> Настройка выгрузки «Готово к импорту»
+          </h5>
+          <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+        </div>
+        <div class="modal-body p-4">
+          <div class="row g-4">
+            <!-- Блок 1: Источник цен -->
+            <div class="col-md-6 border-end">
+              <h6 class="fw-bold text-dark mb-3"><i class="bi bi-currency-exchange text-success me-1"></i> Источник цен для Листа 1:</h6>
+              
+              <div class="form-check mb-2">
+                <input class="form-check-input" type="radio" name="exportPriceSource" id="exportSourceFields" value="fields" checked onchange="handleExportConfigChange()">
+                <label class="form-check-label fw-semibold" for="exportSourceFields">
+                  Как в полях таблицы (Колонка «Новая цена»)
+                  <small class="text-muted d-block fw-normal">Выгрузит точно те цены, которые сейчас стоят в полях таблицы (включая ручные правки).</small>
+                </label>
+              </div>
+
+              <div class="form-check mb-2">
+                <input class="form-check-input" type="radio" name="exportPriceSource" id="exportSourceCurrentStrategy" value="strategy" onchange="handleExportConfigChange()">
+                <label class="form-check-label fw-semibold" for="exportSourceCurrentStrategy">
+                  По выбранной настройке в шапке
+                  <small class="text-muted d-block fw-normal text-primary" id="exportStrategyLabel">Текущая настройка: 1. Мин. рынок</small>
+                </label>
+              </div>
+
+              <div class="form-check mb-2">
+                <input class="form-check-input" type="radio" name="exportPriceSource" id="exportSourceMin" value="min_in_stock" onchange="handleExportConfigChange()">
+                <label class="form-check-label" for="exportSourceMin">
+                  1. Мин. рынок (в наличии)
+                </label>
+              </div>
+
+              <div class="form-check mb-2">
+                <input class="form-check-input" type="radio" name="exportPriceSource" id="exportSourceRrc" value="rrc" onchange="handleExportConfigChange()">
+                <label class="form-check-label" for="exportSourceRrc">
+                  2. Строго по РРЦ
+                </label>
+              </div>
+
+              <div class="form-check mb-2">
+                <input class="form-check-input" type="radio" name="exportPriceSource" id="exportSourceSite" value="current" onchange="handleExportConfigChange()">
+                <label class="form-check-label" for="exportSourceSite">
+                  3. Текущая цена сайта
+                </label>
+              </div>
+
+              <div class="form-check mb-2">
+                <input class="form-check-input" type="radio" name="exportPriceSource" id="exportSourcePartner" value="partner" onchange="handleExportConfigChange()">
+                <label class="form-check-label" for="exportSourcePartner">
+                  По конкретному партнеру:
+                </label>
+                <select id="exportPartnerSelect" class="form-select form-select-sm mt-1" onchange="document.getElementById('exportSourcePartner').checked = true; handleExportConfigChange();">
+                  <!-- Заполняется JS уникальными магазинами -->
+                </select>
+              </div>
+            </div>
+
+            <!-- Блок 2: Выбор колонок (Соответствие полям Хорошопа) -->
+            <div class="col-md-6">
+              <h6 class="fw-bold text-dark mb-3"><i class="bi bi-layout-three-columns text-primary me-1"></i> Поля (колонки) для импорта:</h6>
+              <div class="small text-muted mb-2">Выберите поля для формирования Листа 1 «Готово к импорту»:</div>
+
+              <div class="form-check mb-2">
+                <input class="form-check-input export-col-cb" type="checkbox" id="colArticle" value="Артикул" checked onchange="handleExportConfigChange()">
+                <label class="form-check-label fw-semibold" for="colArticle">
+                  Артикул <span class="badge bg-light text-secondary border ms-1">человеческий код</span>
+                </label>
+              </div>
+
+              <div class="form-check mb-2">
+                <input class="form-check-input export-col-cb" type="checkbox" id="colHoroshopArticle" value="ХОРОШОП АРТИКУЛ" checked onchange="handleExportConfigChange()">
+                <label class="form-check-label fw-semibold" for="colHoroshopArticle">
+                  ХОРОШОП АРТИКУЛ <span class="badge bg-primary-subtle text-primary border border-primary-subtle ms-1">GUID Хорошопа</span>
+                </label>
+              </div>
+
+              <div class="form-check mb-2">
+                <input class="form-check-input export-col-cb" type="checkbox" id="colPrice" value="Цена" checked disabled>
+                <label class="form-check-label fw-semibold" for="colPrice">
+                  Цена <span class="badge bg-success-subtle text-success border border-success-subtle ms-1">обязательное поле</span>
+                </label>
+              </div>
+
+              <div class="form-check mb-2">
+                <input class="form-check-input export-col-cb" type="checkbox" id="colOldPrice" value="Старая цена" onchange="handleExportConfigChange()">
+                <label class="form-check-label" for="colOldPrice">
+                  Старая цена <span class="badge bg-light text-muted border ms-1">РРЦ / предыдущая цена</span>
+                </label>
+              </div>
+
+              <div class="form-check mb-2">
+                <input class="form-check-input export-col-cb" type="checkbox" id="colTitle" value="Название" onchange="handleExportConfigChange()">
+                <label class="form-check-label" for="colTitle">
+                  Название <span class="badge bg-light text-muted border ms-1">номенклатура каталога</span>
+                </label>
+              </div>
+
+              <div class="form-check mb-2">
+                <input class="form-check-input export-col-cb" type="checkbox" id="colBrand" value="Бренд" onchange="handleExportConfigChange()">
+                <label class="form-check-label" for="colBrand">
+                  Бренд <span class="badge bg-light text-muted border ms-1">производитель</span>
+                </label>
+              </div>
+            </div>
+          </div>
+
+          <!-- Блок 3: Интерактивный предпросмотр -->
+          <div class="mt-4 pt-3 border-top">
+            <div class="d-flex align-items-center justify-content-between mb-2">
+              <span class="small fw-bold text-muted text-uppercase tracking-wider">
+                <i class="bi bi-eye text-primary me-1"></i> Предпросмотр листа «Готово к импорту» (первые 4 позиции):
+              </span>
+              <span class="badge bg-light text-muted border" id="exportPreviewBadge">Позиций к выгрузке: 0</span>
+            </div>
+            <div class="table-responsive rounded border bg-light" style="max-height: 180px;">
+              <table class="table table-sm table-bordered m-0 small bg-white text-nowrap">
+                <thead class="table-light" id="exportPreviewThead">
+                  <!-- Заполняется JS -->
+                </thead>
+                <tbody id="exportPreviewTbody">
+                  <!-- Заполняется JS -->
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+        <div class="modal-footer bg-light d-flex justify-content-between">
+          <button type="button" class="btn btn-outline-secondary btn-sm" data-bs-dismiss="modal">Закрыть</button>
+          <button type="button" class="btn btn-success btn-sm px-4 fw-semibold" onclick="executeCustomExport()">
+            <i class="bi bi-file-earmark-arrow-down-fill me-1"></i> Скачать настроенный Excel
+          </button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Toast Notification Container -->
+  <div class="toast-container position-fixed bottom-0 end-0 p-3" style="z-index: 1080;">
+    <div id="appToast" class="toast align-items-center text-bg-dark border-0" role="alert" aria-live="assertive" aria-atomic="true">
+      <div class="d-flex">
+        <div class="toast-body" id="toastMessage">
+          Сообщение системы
+        </div>
+        <button type="button" class="btn-close btn-close-white me-2 m-auto" data-bs-dismiss="toast"></button>
+      </div>
+    </div>
+  </div>
+
+  <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
+  <script>
+    let allProducts = [];
+    let selectedArticles = new Set();
+    let batchModalInstance = null;
+    let exportConfigModalInstance = null;
+    let toastInstance = null;
+
+    document.addEventListener("DOMContentLoaded", () => {
+      batchModalInstance = new bootstrap.Modal(document.getElementById("batchModal"));
+      exportConfigModalInstance = new bootstrap.Modal(document.getElementById("exportConfigModal"));
+      toastInstance = new bootstrap.Toast(document.getElementById("appToast"), { delay: 4000 });
+      loadExportColumnPreferences();
+      loadStatus();
+      loadData();
+    });
+
+    function showToast(message, isError = false) {
+      const toastEl = document.getElementById("appToast");
+      const toastMsg = document.getElementById("toastMessage");
+      toastEl.className = `toast align-items-center text-bg-${isError ? 'danger' : 'success'} border-0`;
+      toastMsg.innerHTML = message;
+      toastInstance.show();
+    }
+
+    async function loadStatus() {
+      try {
+        const res = await fetch("/api/status");
+        const data = await res.json();
+
+        // Docker Badge
+        const dockerBadge = document.getElementById("dockerStatusBadge");
+        if (data.docker && data.docker.active) {
+          dockerBadge.className = "status-badge bg-success text-white";
+          dockerBadge.innerHTML = `<i class="bi bi-check-circle-fill"></i> Docker: ${data.docker.watches_count} watches`;
+        } else {
+          dockerBadge.className = "status-badge bg-warning text-dark";
+          dockerBadge.innerHTML = `<i class="bi bi-hdd-network"></i> Docker: кэш (${data.docker.watches_count || 0})`;
+        }
+
+        // Horoshop Badge
+        const horoshopBadge = document.getElementById("horoshopStatusBadge");
+        if (data.horoshop && data.horoshop.connected) {
+          horoshopBadge.className = "status-badge bg-success text-white";
+          horoshopBadge.innerHTML = `<i class="bi bi-check-circle-fill"></i> Хорошоп: ${data.horoshop.catalog_count} товаров`;
+        } else {
+          horoshopBadge.className = "status-badge bg-danger text-white";
+          horoshopBadge.innerHTML = `<i class="bi bi-x-circle-fill"></i> Хорошоп: ошибка`;
+        }
+
+        // XML Badge
+        const xmlBadge = document.getElementById("imagesStatusBadge");
+        if (data.images && data.images.loaded) {
+          xmlBadge.className = "status-badge bg-success text-white";
+          xmlBadge.innerHTML = `<i class="bi bi-images"></i> Фото XML: ${data.images.count}`;
+        } else {
+          xmlBadge.className = "status-badge bg-secondary text-white";
+          xmlBadge.innerHTML = `<i class="bi bi-images"></i> XML не загружен`;
+        }
+
+        // Files Check
+        const filesContainer = document.getElementById("filesCheckList");
+        if (data.files && data.files.length) {
+          filesContainer.innerHTML = data.files.map(f => `
+            <div class="col-md-6 col-lg-3">
+              <div class="p-2 border rounded bg-light d-flex flex-column justify-content-between h-100">
+                <div class="d-flex align-items-center gap-2 mb-1">
+                  <i class="bi bi-${f.is_warning ? 'exclamation-circle-fill text-warning' : 'check-circle-fill text-success'}"></i>
+                  <strong class="small text-truncate" title="${f.title}">${f.filename}</strong>
+                </div>
+                <div class="text-muted" style="font-size: 0.75rem;">
+                  ${f.message}
+                </div>
+              </div>
+            </div>
+          `).join("");
+        }
+      } catch (err) {
+        console.error("Ошибка получения статуса:", err);
+      }
+    }
+
+    function escapeHtml(str) {
+      if (!str) return '';
+      return String(str)
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&#039;');
+    }
+
+    function populateFilterOptions() {
+      // 1. Бренды из каталога Хорошоп
+      const brandSelect = document.getElementById("filterBrand");
+      const currentBrand = brandSelect.value;
+      const brandCounts = {};
+      for (const p of allProducts) {
+        const b = (p.brand || "").trim();
+        if (b) {
+          brandCounts[b] = (brandCounts[b] || 0) + 1;
+        }
+      }
+      const sortedBrands = Object.keys(brandCounts).sort((a, b) => a.localeCompare(b, 'ru', { sensitivity: 'base' }));
+      let brandOptions = `<option value="">Все бренды (${allProducts.length})</option>`;
+      for (const b of sortedBrands) {
+        brandOptions += `<option value="${escapeHtml(b)}">${escapeHtml(b)} (${brandCounts[b]})</option>`;
+      }
+      brandSelect.innerHTML = brandOptions;
+      if (currentBrand && brandCounts[currentBrand]) {
+        brandSelect.value = currentBrand;
+      }
+
+      // 2. Магазины партнеров
+      const storeSelect = document.getElementById("filterStore");
+      const currentStore = storeSelect.value;
+      const storeCounts = {};
+      for (const p of allProducts) {
+        for (const st of Object.keys(p.partner_breakdown || {})) {
+          if (st) {
+            storeCounts[st] = (storeCounts[st] || 0) + 1;
+          }
+        }
+      }
+      const sortedStores = Object.keys(storeCounts).sort((a, b) => {
+        // Сначала по убыванию числа товаров, затем по алфавиту
+        if (storeCounts[b] !== storeCounts[a]) {
+          return storeCounts[b] - storeCounts[a];
+        }
+        return a.localeCompare(b, 'ru', { sensitivity: 'base' });
+      });
+
+      let storeOptions = `<option value="">Все магазины</option>`;
+      for (const st of sortedStores) {
+        storeOptions += `<option value="${escapeHtml(st)}">${escapeHtml(st)} (${storeCounts[st]})</option>`;
+      }
+      storeSelect.innerHTML = storeOptions;
+      if (currentStore && storeCounts[currentStore]) {
+        storeSelect.value = currentStore;
+      }
+
+      // 3. Динамическое наполнение стратегий выбора Новой цены по любому партнеру
+      const strategyPartnersGroup = document.getElementById("strategyPartnersGroup");
+      const strategySelect = document.getElementById("strategySelect");
+      const currentStrategy = strategySelect ? strategySelect.value : "min_in_stock";
+
+      if (strategyPartnersGroup) {
+        let partnersHtml = "";
+        for (const st of sortedStores) {
+          partnersHtml += `<option value="partner_${escapeHtml(st)}">По партнеру: ${escapeHtml(st)} (${storeCounts[st]} тов.)</option>`;
+        }
+        strategyPartnersGroup.innerHTML = partnersHtml || '<option value="" disabled>Нет данных партнеров</option>';
+      }
+
+      if (strategySelect && currentStrategy) {
+        if (currentStrategy.startsWith("partner_") || ["min_in_stock", "rrc", "current"].includes(currentStrategy)) {
+          strategySelect.value = currentStrategy;
+        }
+      }
+    }
+
+    async function loadData(forceRefresh = false) {
+      const tbody = document.getElementById("productsTableBody");
+      tbody.innerHTML = `
+        <tr>
+          <td colspan="13" class="text-center py-5 text-muted">
+            <div class="spinner-border spinner-border-sm text-primary mb-2" role="status"></div>
+            <div>Загрузка актуальных цен...</div>
+          </td>
+        </tr>
+      `;
+
+      try {
+        const url = forceRefresh ? "/api/data?refresh=true" : "/api/data";
+        const res = await fetch(url);
+        const data = await res.json();
+        allProducts = data.products || [];
+        populateFilterOptions();
+        updateCounts();
+        applyStrategy();
+      } catch (err) {
+        tbody.innerHTML = `
+          <tr>
+            <td colspan="13" class="text-center py-5 text-danger">
+              <i class="bi bi-exclamation-triangle-fill fs-3 d-block mb-2"></i>
+              Ошибка загрузки данных: ${err.message}
+            </td>
+          </tr>
+        `;
+      }
+    }
+
+    async function refreshData() {
+      showToast("Запущено обновление данных из Docker, XML и Хорошоп...");
+      await loadStatus();
+      await loadData(true);
+      showToast("Данные успешно обновлены!");
+    }
+
+    function updateCounts() {
+      document.getElementById("totalItemsCount").textContent = allProducts.length;
+      const cntAll = document.getElementById("countAll");
+      if (cntAll) cntAll.textContent = allProducts.length;
+
+      let inStock = 0, dumping = 0, ourDiff = 0, locked = 0, ourLowest = 0, synced = 0, ourHigher = 0;
+      for (const p of allProducts) {
+        if (p.is_locked) locked++;
+        if (p.in_stock_count > 0) inStock++;
+        if (p.diff_to_rrc !== null && p.diff_to_rrc < 0) dumping++;
+
+        const isLowest = Boolean(p.is_our_price_lowest);
+        if (isLowest) ourLowest++;
+
+        const isTargetMatch = p.our_price && p.target_price && Math.abs(p.our_price - p.target_price) < 0.5;
+        if (isTargetMatch) {
+          synced++;
+        } else if (p.target_price > 0 && p.our_price !== null) {
+          ourDiff++;
+        }
+
+        if (p.diff_our_to_market !== null && p.diff_our_to_market > 0.5) {
+          ourHigher++;
+        }
+      }
+
+      const elInStock = document.getElementById("countInStock");
+      if (elInStock) elInStock.textContent = inStock;
+      const elDumping = document.getElementById("countDumping");
+      if (elDumping) elDumping.textContent = dumping;
+      const elOurDiff = document.getElementById("countOurDiff");
+      if (elOurDiff) elOurDiff.textContent = ourDiff;
+      const elOurLowest = document.getElementById("countOurLowest");
+      if (elOurLowest) elOurLowest.textContent = ourLowest;
+      const elSynced = document.getElementById("countSynced");
+      if (elSynced) elSynced.textContent = synced;
+      const elOurHigher = document.getElementById("countOurHigher");
+      if (elOurHigher) elOurHigher.textContent = ourHigher;
+      const elLocked = document.getElementById("countLocked");
+      if (elLocked) elLocked.textContent = locked;
+
+      // Бейджи сводки вверху
+      const bLowest = document.getElementById("badgeBelowMarket");
+      const bSynced = document.getElementById("badgeSynced");
+      const bNeed = document.getElementById("badgeNeedUpdate");
+      if (bLowest) bLowest.textContent = ourLowest;
+      if (bSynced) bSynced.textContent = synced;
+      if (bNeed) bNeed.textContent = ourDiff;
+    }
+
+    function setQuickFilter(filterKey) {
+      const select = document.getElementById("filterStatus");
+      if (select) {
+        select.value = filterKey;
+        filterTable();
+      }
+    }
+
+    function resetAllFilters() {
+      document.getElementById("searchInput").value = "";
+      document.getElementById("filterBrand").value = "";
+      document.getElementById("filterStore").value = "";
+      document.getElementById("filterStatus").value = "all";
+      document.getElementById("filterStock").value = "all";
+      filterTable();
+    }
+
+    function clearSearch() {
+      document.getElementById("searchInput").value = "";
+      filterTable();
+    }
+
+    function applyStrategy() {
+      const strategySelect = document.getElementById("strategySelect");
+      const strategy = strategySelect ? strategySelect.value : "min_in_stock";
+      const exportExcelBtn = document.getElementById("exportExcelBtn");
+
+      let chosenPartner = null;
+      if (strategy && strategy.startsWith("partner_")) {
+        chosenPartner = strategy.replace("partner_", "").trim();
+      }
+
+      // Обновление подсказки кнопки скачивания Excel
+      if (exportExcelBtn) {
+        let titleDesc = "по минимальному рынку";
+        if (chosenPartner) {
+          titleDesc = `по партнеру '${chosenPartner}'`;
+        } else if (strategy === "rrc") {
+          titleDesc = "строго по РРЦ";
+        } else if (strategy === "current") {
+          titleDesc = "по текущим ценам сайта";
+        }
+        exportExcelBtn.title = `Скачать Excel: лист 'Готово к импорту' с ценами ${titleDesc} и текущими полями таблицы`;
+      }
+
+      for (const p of allProducts) {
+        if (p.is_locked) {
+          p.target_price = p.our_price || p.rrc_price || 0;
+          continue;
+        }
+
+        if (strategy === "min_in_stock") {
+          p.target_price = p.min_market_price !== null ? p.min_market_price : (p.rrc_price || p.our_price || 0);
+        } else if (strategy === "rrc") {
+          p.target_price = p.rrc_price || p.our_price || 0;
+        } else if (strategy === "current") {
+          p.target_price = p.our_price || p.rrc_price || 0;
+        } else if (chosenPartner) {
+          const pInfo = p.partner_breakdown ? p.partner_breakdown[chosenPartner] : null;
+          if (pInfo && pInfo.price && pInfo.price > 0) {
+            p.target_price = pInfo.price;
+          } else {
+            // Если у данного партнера нет предложения, fallback на минимальный рынок или РРЦ
+            p.target_price = p.min_market_price !== null ? p.min_market_price : (p.rrc_price || p.our_price || 0);
+          }
+        }
+      }
+
+      filterTable();
+    }
+
+    function filterTable() {
+      const search = (document.getElementById("searchInput").value || "").trim().toUpperCase();
+      const brandFilter = (document.getElementById("filterBrand").value || "").trim().toUpperCase();
+      const storeFilter = (document.getElementById("filterStore").value || "").trim();
+      const statusFilter = document.getElementById("filterStatus").value;
+      const stockFilter = document.getElementById("filterStock").value;
+
+      const filtered = allProducts.filter(p => {
+        // 1. Поиск
+        if (search) {
+          const matchArt = (p.article || "").toUpperCase().includes(search);
+          const matchHorArt = (p.horoshop_article || "").toUpperCase().includes(search);
+          const matchTitle = (p.title || "").toUpperCase().includes(search);
+          const matchBrand = (p.brand || "").toUpperCase().includes(search);
+          if (!matchArt && !matchHorArt && !matchTitle && !matchBrand) return false;
+        }
+
+        // 2. Фильтр по бренду
+        if (brandFilter) {
+          if ((p.brand || "").trim().toUpperCase() !== brandFilter) return false;
+        }
+
+        // 3. Фильтр по магазину
+        if (storeFilter) {
+          if (!p.partner_breakdown || !p.partner_breakdown[storeFilter]) return false;
+        }
+
+        // 4. Фильтр наличия
+        if (stockFilter === "in_stock" && p.in_stock_count === 0) return false;
+        if (stockFilter === "out_of_stock" && p.in_stock_count > 0) return false;
+
+        // 5. Фильтр статуса
+        if (statusFilter === "our_lowest" && !p.is_our_price_lowest) return false;
+        if (statusFilter === "dumping_rrc" && (p.diff_to_rrc === null || p.diff_to_rrc >= 0)) return false;
+        if (statusFilter === "synced" && (!p.our_price || !p.target_price || Math.abs(p.our_price - p.target_price) >= 0.5)) return false;
+        if (statusFilter === "our_higher" && (p.diff_our_to_market === null || p.diff_our_to_market <= 0.5)) return false;
+        if (statusFilter === "our_diff" && (p.target_price <= 0 || (p.our_price && Math.abs(p.our_price - p.target_price) < 0.5))) return false;
+        if (statusFilter === "locked" && !p.is_locked) return false;
+
+        return true;
+      });
+
+      renderTable(filtered);
+    }
+
+    function renderTable(products) {
+      const tbody = document.getElementById("productsTableBody");
+      document.getElementById("visibleCount").textContent = products.length;
+
+      if (!products.length) {
+        tbody.innerHTML = `
+          <tr>
+            <td colspan="13" class="text-center py-5 text-muted">
+              Товары по заданным критериям не найдены.
+            </td>
+          </tr>
+        `;
+        return;
+      }
+
+      const rowsHtml = products.map(p => {
+        const isChecked = selectedArticles.has(p.article);
+        const imgTag = p.image_url
+          ? `<img src="${p.image_url}" class="product-thumb" alt="${p.article}" onerror="this.src='data:image/svg+xml;utf8,<svg xmlns=\\'http://www.w3.org/2000/svg\\' width=\\'54\\' height=\\'54\\' fill=\\'%23ccc\\'><rect width=\\'100%\\' height=\\'100%\\' fill=\\'%23f8f9fa\\'/><text x=\\'50%\\' y=\\'50%\\' dominant-baseline=\\'middle\\' text-anchor=\\'middle\\' font-size=\\'10\\'>НЕТ ФОТО</text></svg>'">`
+          : `<div class="product-thumb d-flex align-items-center justify-content-center text-muted" style="font-size: 0.65rem;">НЕТ ФОТО</div>`;
+
+        // Партнеры
+        const partnersHtml = Object.entries(p.partner_breakdown || {}).map(([store, info]) => {
+          const cls = info.in_stock ? "in-stock" : "out-of-stock";
+          const icon = info.in_stock ? "✓" : "✗";
+          const storeEsc = escapeHtml(store);
+          const isSelectedPartner = Boolean(info.price && p.target_price && Math.abs(info.price - p.target_price) < 0.5);
+          const activeClass = isSelectedPartner ? 'border-primary border-2 shadow-sm' : 'border';
+
+          return `
+            <div class="d-inline-flex align-items-center mb-1 me-1 rounded bg-white ${activeClass}" style="font-size: 0.74rem; vertical-align: middle;">
+              <a href="${info.url}" target="_blank" class="badge-partner ${cls} text-decoration-none m-0 border-0 rounded-start"
+                 style="padding: 2px 6px;"
+                 title="${storeEsc} (${info.in_stock ? 'В наличии' : 'Нет в наличии'})\nНажмите для перехода на страницу магазина">
+                ${storeEsc}: ${info.price} грн ${icon}
+              </a>
+              <button type="button" class="btn btn-sm btn-link p-0 px-1 text-primary text-decoration-none border-start"
+                      style="font-size: 0.75rem; background: #f6f8fa; border-top-right-radius: 4px; border-bottom-right-radius: 4px;"
+                      onclick="setPriceFromPartner('${p.article}', ${info.price}, '${storeEsc}')"
+                      title="Выставить ${info.price} грн (${storeEsc}) в Новую цену этой позиции">
+                <i class="bi bi-box-arrow-in-right"></i>
+              </button>
+            </div>
+          `;
+        }).join("");
+
+        // 1. Отклонение от РРЦ (Рынок vs РРЦ)
+        let diffRrcHtml = '<span class="text-muted">—</span>';
+        if (p.diff_to_rrc !== null) {
+          const pctStr = p.diff_to_rrc_pct !== null ? ` (${p.diff_to_rrc_pct > 0 ? '+' : ''}${p.diff_to_rrc_pct}%)` : '';
+          if (p.diff_to_rrc < 0) {
+            diffRrcHtml = `<span class="badge bg-danger-subtle text-danger border border-danger-subtle fw-bold" title="Демпинг рынка: на ${Math.abs(p.diff_to_rrc)} грн ниже РРЦ">${p.diff_to_rrc} грн${pctStr}</span>`;
+          } else if (p.diff_to_rrc === 0) {
+            diffRrcHtml = `<span class="badge bg-success-subtle text-success border border-success-subtle">РРЦ OK</span>`;
+          } else {
+            diffRrcHtml = `<span class="badge bg-info-subtle text-info-emphasis border border-info-subtle">+${p.diff_to_rrc} грн${pctStr}</span>`;
+          }
+        }
+
+        const isLowest = Boolean(p.is_our_price_lowest);
+        const isSynced = Boolean(p.our_price && p.target_price && Math.abs(p.our_price - p.target_price) < 0.5);
+
+        // 2. Отклонение от Нашего сайта (Мы vs Мин. рынок)
+        let diffOurHtml = '<span class="text-muted">—</span>';
+        if (p.diff_our_to_market !== null) {
+          const pctStr = p.diff_our_to_market_pct !== null ? ` (${p.diff_our_to_market_pct > 0 ? '+' : ''}${p.diff_our_to_market_pct}%)` : '';
+          if (isLowest) {
+            diffOurHtml = `
+              <span class="badge bg-danger text-white fw-bold shadow-sm"
+                    title="ВНИМАНИЕ! Наша цена НИЖЕ дилеров на ${Math.abs(p.diff_our_to_market)} грн! Как дистрибьютор, мы демпингуем клиентов.">
+                <i class="bi bi-exclamation-octagon-fill"></i> ${p.diff_our_to_market} грн${pctStr}
+              </span>`;
+          } else if (Math.abs(p.diff_our_to_market) <= 0.5) {
+            diffOurHtml = `<span class="badge bg-success-subtle text-success border border-success-subtle"><i class="bi bi-check2"></i> В рынке (0 грн)</span>`;
+          } else {
+            diffOurHtml = `<span class="badge bg-warning-subtle text-dark border border-warning-subtle">+${p.diff_our_to_market} грн${pctStr}</span>`;
+          }
+        }
+
+        const lockBadge = p.is_locked
+          ? `<div class="badge-locked mt-1"><i class="bi bi-lock-fill"></i> ЗАФИКСИРОВАНО</div>`
+          : '';
+
+        // Отображение нашей цены и статуса
+        let ourPriceCellHtml = '<span class="badge bg-light text-muted border">Не на сайте</span>';
+        if (p.our_price !== null && p.our_price > 0) {
+          let statusBadge = '';
+          if (isLowest) {
+            statusBadge = `
+              <div class="badge bg-danger text-white mt-1 d-inline-block p-1" style="font-size: 0.72rem;"
+                   title="ВНИМАНИЕ! Наша цена ниже минимальной цены партнеров (${p.min_store}) на ${Math.abs(p.diff_our_to_market)} грн. Как дистрибьютор, мы демпингуем дилеров!">
+                <i class="bi bi-exclamation-octagon-fill"></i> НИЖЕ ДИЛЕРОВ (-${Math.abs(p.diff_our_to_market)} грн)
+              </div>`;
+          } else if (isSynced) {
+            statusBadge = `
+              <div class="badge bg-success-subtle text-success border border-success-subtle mt-1 d-inline-block p-1" style="font-size: 0.72rem;">
+                <i class="bi bi-check2-circle"></i> Установлена
+              </div>`;
+          } else if (p.diff_our_to_market !== null) {
+            statusBadge = `
+              <div class="badge bg-warning-subtle text-dark border border-warning-subtle mt-1 d-inline-block p-1" style="font-size: 0.72rem;">
+                ${p.diff_our_to_market > 0 ? '+' : ''}${p.diff_our_to_market} грн от рынка
+              </div>`;
+          }
+
+          const oldPriceHtml = p.our_price_old ? `<del class="text-muted d-block" style="font-size: 0.72rem;">РРЦ: ${p.our_price_old} грн</del>` : '';
+
+          ourPriceCellHtml = `
+            <div class="fw-bold fs-6 ${isLowest ? 'text-danger' : 'text-dark'}">${p.our_price} грн</div>
+            ${oldPriceHtml}
+            ${statusBadge}
+          `;
+        }
+
+        // Кнопка действия
+        let actionBtn = '';
+        if (p.is_locked) {
+          actionBtn = `<button class="btn btn-sm btn-outline-secondary disabled" title="Цена зафиксирована замком"><i class="bi bi-lock-fill"></i> Защищено</button>`;
+        } else if (isLowest) {
+          actionBtn = `<button class="btn btn-sm btn-danger fw-bold" onclick="updateSinglePrice('${p.article}')" title="Поднять цену до рынка, чтобы не демпинговать дилеров"><i class="bi bi-arrow-up-circle-fill"></i> Поднять цену</button>`;
+        } else if (isSynced) {
+          actionBtn = `<button class="btn btn-sm btn-outline-success" onclick="updateSinglePrice('${p.article}')" title="Цена уже установлена и совпадает. Нажмите для повторной отправки"><i class="bi bi-check2-circle"></i> Установлена</button>`;
+        } else {
+          actionBtn = `<button class="btn btn-sm btn-primary" onclick="updateSinglePrice('${p.article}')"><i class="bi bi-arrow-up-right-circle"></i> Установить</button>`;
+        }
+
+        const checkboxDisabled = p.is_locked ? 'disabled' : '';
+        let rowClass = '';
+        if (p.is_locked) rowClass = 'table-light';
+        else if (isLowest) rowClass = 'table-danger border-start border-4 border-danger';
+
+        const brandBadge = p.brand
+          ? `<span class="badge bg-primary-subtle text-primary border border-primary-subtle px-2 py-0 mt-1 fw-bold" style="font-size: 0.72rem;"><i class="bi bi-tag-fill me-1"></i>${escapeHtml(p.brand)}</span>`
+          : '<span class="text-muted small">Без бренда</span>';
+
+        return `
+          <tr id="row-${p.article}" class="${rowClass}">
+            <td class="text-center">
+              <input type="checkbox" class="form-check-input item-checkbox"
+                     data-article="${p.article}"
+                     ${checkboxDisabled}
+                     ${isChecked && !p.is_locked ? 'checked' : ''}
+                     onchange="handleItemCheck(this, '${p.article}')">
+            </td>
+            <td class="text-center">
+              <button type="button" 
+                      class="btn-lock ${p.is_locked ? 'locked' : 'unlocked'}" 
+                      onclick="toggleLock('${p.article}')"
+                      title="${p.is_locked ? 'Зафиксировано от изменений. Нажмите, чтобы снять замок' : 'Нажмите, чтобы зафиксировать цену (поставить замок)'}">
+                <i class="bi bi-${p.is_locked ? 'lock-fill' : 'unlock'}"></i>
+              </button>
+            </td>
+            <td class="text-center">${imgTag}</td>
+            <td>
+              <strong class="d-block font-monospace">${escapeHtml(p.article)}</strong>
+              ${p.horoshop_article ? `
+                <div class="mt-1 d-flex align-items-center gap-1">
+                  <span class="badge bg-light text-secondary border font-monospace text-truncate d-inline-block" 
+                        style="max-width: 155px; font-size: 0.72rem; cursor: pointer;"
+                        onclick="copyToClipboard('${p.horoshop_article}', 'UUID ${p.horoshop_article} скопирован!')"
+                        title="Внутренний артикул Хорошоп (UUID): ${p.horoshop_article}\nНажмите, чтобы скопировать">
+                    <i class="bi bi-fingerprint text-primary"></i> ${p.horoshop_article}
+                  </span>
+                  <button type="button" class="btn btn-link btn-sm p-0 text-muted" 
+                          onclick="copyToClipboard('${p.horoshop_article}', 'UUID скопирован!')" 
+                          title="Скопировать Хорошоп UUID">
+                    <i class="bi bi-clipboard" style="font-size: 0.75rem;"></i>
+                  </button>
+                </div>
+              ` : ''}
+              ${lockBadge}
+            </td>
+            <td>
+              <div class="fw-semibold text-truncate" style="max-width: 260px;" title="${escapeHtml(p.title || '')}">${p.title || '—'}</div>
+              ${brandBadge}
+            </td>
+            <td class="text-end fw-semibold text-muted">${p.rrc_price ? p.rrc_price + ' грн' : '—'}</td>
+            <td class="text-end">${ourPriceCellHtml}</td>
+            <td class="text-end">
+              ${p.min_market_price !== null ? `<strong class="text-primary">${p.min_market_price} грн</strong><br><small class="text-muted text-truncate d-inline-block" style="max-width: 110px;">${escapeHtml(p.min_store)}</small>` : '<span class="text-muted">—</span>'}
+            </td>
+            <td>${partnersHtml || '<span class="text-muted small">Нет данных трекера</span>'}</td>
+            <td class="text-center">${diffRrcHtml}</td>
+            <td class="text-center">${diffOurHtml}</td>
+            <td class="text-end">
+              <input type="number" step="1" id="price-input-${p.article}"
+                     class="form-control form-control-sm price-input d-inline-block"
+                     value="${p.target_price || ''}"
+                     ${p.is_locked ? 'readonly' : ''}
+                     onchange="handlePriceInputChange('${p.article}', this.value)">
+            </td>
+            <td class="text-center">${actionBtn}</td>
+          </tr>
+        `;
+      }).join("");
+
+      tbody.innerHTML = rowsHtml;
+      updateSelectedCounter();
+    }
+
+    async function toggleLock(article) {
+      const p = allProducts.find(x => x.article === article);
+      if (!p) return;
+
+      const targetState = !p.is_locked;
+      try {
+        const res = await fetch("/api/toggle-lock", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ article: article, locked: targetState })
+        });
+        const data = await res.json();
+        if (data.success) {
+          p.is_locked = data.is_locked;
+          if (p.is_locked) {
+            selectedArticles.delete(article);
+          }
+          updateCounts();
+          filterTable();
+          showToast(data.message || (p.is_locked ? `Артикул ${article} зафиксирован замком 🔒` : `Замок с артикула ${article} снят 🔓`));
+        } else {
+          showToast(data.message || "Не удалось изменить статус замка", true);
+        }
+      } catch (err) {
+        showToast(`Ошибка сети: ${err.message}`, true);
+      }
+    }
+
+    function handleItemCheck(cb, article) {
+      if (cb.checked) {
+        selectedArticles.add(article);
+      } else {
+        selectedArticles.delete(article);
+      }
+      updateSelectedCounter();
+    }
+
+    function toggleSelectAll(master) {
+      const checkboxes = document.querySelectorAll(".item-checkbox:not(:disabled)");
+      checkboxes.forEach(cb => {
+        cb.checked = master.checked;
+        const art = cb.getAttribute("data-article");
+        if (master.checked) {
+          selectedArticles.add(art);
+        } else {
+          selectedArticles.delete(art);
+        }
+      });
+      updateSelectedCounter();
+    }
+
+    function selectAllNonLocked() {
+      for (const p of allProducts) {
+        if (!p.is_locked && (p.target_price > 0)) {
+          selectedArticles.add(p.article);
+        }
+      }
+      filterTable();
+    }
+
+    function deselectAll() {
+      selectedArticles.clear();
+      document.getElementById("selectAllCheckbox").checked = false;
+      filterTable();
+    }
+
+    function updateSelectedCounter() {
+      const cnt = selectedArticles.size;
+      document.getElementById("selectedCount").textContent = cnt;
+      document.getElementById("footerSelectedCount").textContent = cnt;
+    }
+
+    function handlePriceInputChange(article, value) {
+      const p = allProducts.find(x => x.article === article);
+      if (p) {
+        p.target_price = parseFloat(value) || 0;
+      }
+    }
+
+    async function updateSinglePrice(article) {
+      const p = allProducts.find(x => x.article === article);
+      if (!p) return;
+
+      const input = document.getElementById(`price-input-${article}`);
+      const newPrice = parseFloat(input.value);
+
+      if (!newPrice || newPrice <= 0) {
+        showToast("Укажите корректную положительную цену!", true);
+        return;
+      }
+
+      showToast(`Отправка цены ${newPrice} грн на Хорошоп для ${article}...`);
+
+      try {
+        const res = await fetch("/api/update-price", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            article: article,
+            horoshop_article: p.horoshop_article || null,
+            price: newPrice,
+            rrc: p.rrc_price
+          })
+        });
+        const result = await res.json();
+
+        if (result.success) {
+          p.our_price = newPrice;
+          showToast(`✓ Артикул ${article}: цена успешно обновлена на ${newPrice} грн!`);
+          filterTable();
+        } else {
+          showToast(`Ошибка: ${result.message || 'Не удалось обновить цену'}`, true);
+        }
+      } catch (err) {
+        showToast(`Ошибка связи с сервером: ${err.message}`, true);
+      }
+    }
+
+    function openBatchModal() {
+      if (!selectedArticles.size) {
+        showToast("Сначала выберите хотя бы один товар (галочкой)!", true);
+        return;
+      }
+
+      const itemsToUpdate = allProducts.filter(p => selectedArticles.has(p.article) && !p.is_locked);
+      document.getElementById("modalItemsCount").textContent = itemsToUpdate.length;
+
+      const strategySelect = document.getElementById("strategySelect");
+      const stratText = strategySelect && strategySelect.selectedIndex >= 0 ? strategySelect.options[strategySelect.selectedIndex].text : "";
+      const modalStrategyInfo = document.getElementById("modalStrategyInfo");
+      if (modalStrategyInfo) {
+        modalStrategyInfo.innerHTML = stratText ? `<span class="badge bg-primary-subtle text-primary border border-primary-subtle">${escapeHtml(stratText)}</span>` : '';
+      }
+
+      const modalTbody = document.getElementById("modalTableBody");
+      modalTbody.innerHTML = itemsToUpdate.map(p => `
+        <tr>
+          <td>
+            <div class="font-monospace fw-bold">${p.article}</div>
+            ${p.horoshop_article ? `<small class="text-muted font-monospace d-block text-truncate" style="max-width: 190px;" title="${p.horoshop_article}"><i class="bi bi-fingerprint text-primary"></i> ${p.horoshop_article}</small>` : ''}
+          </td>
+          <td class="text-truncate" style="max-width: 250px;">${p.title || '—'}</td>
+          <td class="text-end text-muted">${p.rrc_price ? p.rrc_price + ' грн' : '—'}</td>
+          <td class="text-end">${p.our_price ? p.our_price + ' грн' : '—'}</td>
+          <td class="text-end fw-bold text-primary">${p.target_price} грн</td>
+        </tr>
+      `).join("");
+
+      batchModalInstance.show();
+    }
+
+    function setPriceFromPartner(article, price, store) {
+      const p = allProducts.find(x => x.article === article);
+      if (!p) return;
+
+      if (p.is_locked) {
+        showToast(`Позиция '${article}' зафиксирована замком! Снимите замок перед изменением цены.`, true);
+        return;
+      }
+
+      p.target_price = parseFloat(price) || 0;
+      const input = document.getElementById(`price-input-${article}`);
+      if (input) {
+        input.value = p.target_price;
+        input.classList.add("bg-warning-subtle", "border-warning", "fw-bold");
+        setTimeout(() => {
+          input.classList.remove("bg-warning-subtle");
+        }, 1200);
+      }
+
+      updateCounts();
+      filterTable();
+      showToast(`✓ Для ${article} выставлена цена ${price} грн по партнеру '${store}'`);
+    }
+
+    async function executeBatchUpdate() {
+      const btn = document.getElementById("modalConfirmBtn");
+      btn.disabled = true;
+      btn.innerHTML = `<span class="spinner-border spinner-border-sm" role="status"></span> Отправка в Хорошоп...`;
+
+      const itemsToUpdate = allProducts
+        .filter(p => selectedArticles.has(p.article) && !p.is_locked && p.target_price > 0)
+        .map(p => ({
+          article: p.article,
+          horoshop_article: p.horoshop_article || null,
+          price: p.target_price,
+          rrc: p.rrc_price
+        }));
+
+      try {
+        const res = await fetch("/api/update-batch", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ items: itemsToUpdate })
+        });
+        const result = await res.json();
+
+        batchModalInstance.hide();
+        btn.disabled = false;
+        btn.innerHTML = `<i class="bi bi-check2-circle"></i> Подтвердить и отправить в Хорошоп`;
+
+        if (result.updated > 0) {
+          showToast(`✓ Успешно обновлено ${result.updated} позиций на Хорошоп!`);
+          // Обновим локальные цены
+          for (const it of itemsToUpdate) {
+            const p = allProducts.find(x => x.article === it.article);
+            if (p) p.our_price = it.price;
+          }
+          selectedArticles.clear();
+          filterTable();
+        } else {
+          showToast(`Обновлено 0 товаров. ${result.message || ''}`, true);
+        }
+      } catch (err) {
+        btn.disabled = false;
+        btn.innerHTML = `<i class="bi bi-check2-circle"></i> Подтвердить и отправить в Хорошоп`;
+        showToast(`Ошибка массового обновления: ${err.message}`, true);
+      }
+    }
+
+    function copyToClipboard(text, msg) {
+      if (!text) return;
+      if (navigator.clipboard && window.isSecureContext) {
+        navigator.clipboard.writeText(text).then(() => {
+          showToast(msg || "Скопировано в буфер обмена!");
+        }).catch(() => fallbackCopy(text, msg));
+      } else {
+        fallbackCopy(text, msg);
+      }
+    }
+
+    function fallbackCopy(text, msg) {
+      const ta = document.createElement("textarea");
+      ta.value = text;
+      ta.style.position = "fixed";
+      ta.style.left = "-9999px";
+      document.body.appendChild(ta);
+      ta.focus();
+      ta.select();
+      try {
+        document.execCommand("copy");
+        showToast(msg || "Скопировано в буфер обмена!");
+      } catch (e) {
+        showToast("Не удалось скопировать", true);
+      }
+      document.body.removeChild(ta);
+    }
+    // =================================================================
+    // НАСТРОЙКА И СКАЧИВАНИЕ ЭКСПОРТА EXCEL («ГОТОВО К ИМПОРТУ»)
+    // =================================================================
+
+    function getSelectedExportColumns() {
+      const cbs = document.querySelectorAll(".export-col-cb:checked");
+      const cols = [];
+      cbs.forEach(cb => cols.push(cb.value));
+      return cols.length > 0 ? cols : ["Артикул", "ХОРОШОП АРТИКУЛ", "Цена"];
+    }
+
+    function saveExportColumnPreferences() {
+      try {
+        const cols = getSelectedExportColumns();
+        localStorage.setItem("horoshop_export_cols", JSON.stringify(cols));
+      } catch (e) {}
+    }
+
+    function loadExportColumnPreferences() {
+      try {
+        const saved = localStorage.getItem("horoshop_export_cols");
+        if (saved) {
+          const cols = JSON.parse(saved);
+          if (Array.isArray(cols)) {
+            document.querySelectorAll(".export-col-cb").forEach(cb => {
+              if (cb.value === "Цена") {
+                cb.checked = true; // Цена всегда обязательна
+              } else {
+                cb.checked = cols.includes(cb.value);
+              }
+            });
+          }
+        }
+      } catch (e) {}
+    }
+
+    async function triggerExcelDownload(payload) {
+      const exportBtn = document.getElementById("exportExcelBtn");
+      const origHtml = exportBtn ? exportBtn.innerHTML : "";
+      if (exportBtn) {
+        exportBtn.disabled = true;
+        exportBtn.innerHTML = `<span class="spinner-border spinner-border-sm me-1" role="status"></span> Формирование...`;
+      }
+
+      showToast("Формирование Excel-отчета согласно выбранным настройкам...");
+
+      try {
+        const res = await fetch("/api/export-excel", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(payload)
+        });
+
+        if (!res.ok) {
+          const errText = await res.text();
+          throw new Error(errText || "Ошибка сервера при формировании отчета");
+        }
+
+        const blob = await res.blob();
+        const url = window.URL.createObjectURL(blob);
+        const a = document.createElement("a");
+        a.style.display = "none";
+        a.href = url;
+        const stratName = payload.strategy ? payload.strategy.replace("partner_", "") : "настройка";
+        a.download = `ИТОГОВЫЙ_ОТЧЕТ_${stratName}.xlsx`;
+        document.body.appendChild(a);
+        a.click();
+        window.URL.revokeObjectURL(url);
+        a.remove();
+
+        showToast("✓ Файл Excel успешно скачан!");
+      } catch (err) {
+        showToast(`Ошибка экспорта: ${err.message}`, true);
+      } finally {
+        if (exportBtn) {
+          exportBtn.disabled = false;
+          exportBtn.innerHTML = origHtml;
+        }
+      }
+    }
+
+    function downloadExcelQuick() {
+      // 1. Сбор цен из полей таблицы
+      const customPrices = {};
+      allProducts.forEach(p => {
+        if (!p.is_locked && p.target_price && p.target_price > 0) {
+          customPrices[p.article] = p.target_price;
+        }
+      });
+
+      // 2. Текущая стратегия из шапки
+      const strategySelect = document.getElementById("strategySelect");
+      const strategy = strategySelect ? strategySelect.value : "min_in_stock";
+      let chosenPartner = null;
+      if (strategy && strategy.startsWith("partner_")) {
+        chosenPartner = strategy.replace("partner_", "").trim();
+      }
+
+      const columns = getSelectedExportColumns();
+
+      triggerExcelDownload({
+        strategy: strategy,
+        store: chosenPartner,
+        columns: columns,
+        custom_prices: customPrices
+      });
+    }
+
+    function openExportConfigModal() {
+      // 1. Заполнение селектора партнеров
+      const partnerSelect = document.getElementById("exportPartnerSelect");
+      if (partnerSelect) {
+        const uniqueStores = new Set();
+        allProducts.forEach(p => {
+          if (p.partner_breakdown) {
+            Object.keys(p.partner_breakdown).forEach(s => uniqueStores.add(s));
+          }
+        });
+        const sortedStores = Array.from(uniqueStores).sort();
+        partnerSelect.innerHTML = sortedStores.map(s => `<option value="${escapeHtml(s)}">${escapeHtml(s)}</option>`).join("");
+      }
+
+      // 2. Обновление подписи текущей стратегии
+      const stratSelect = document.getElementById("strategySelect");
+      const stratLabel = document.getElementById("exportStrategyLabel");
+      if (stratSelect && stratLabel) {
+        const selText = stratSelect.options[stratSelect.selectedIndex]?.text || "1. Мин. рынок";
+        stratLabel.textContent = `Текущая настройка в шапке: ${selText}`;
+      }
+
+      renderExportPreview();
+      exportConfigModalInstance.show();
+    }
+
+    function handleExportConfigChange() {
+      renderExportPreview();
+    }
+
+    function calculatePreviewPrice(p, sourceKey) {
+      if (sourceKey === "fields") {
+        return p.target_price || p.min_market_price || p.rrc_price || p.our_price || 0;
+      }
+      if (sourceKey === "strategy") {
+        const stratSelect = document.getElementById("strategySelect");
+        const strat = stratSelect ? stratSelect.value : "min_in_stock";
+        if (strat === "rrc") return p.rrc_price || p.our_price || 0;
+        if (strat === "current") return p.our_price || p.rrc_price || 0;
+        if (strat.startsWith("partner_")) {
+          const partner = strat.replace("partner_", "").trim();
+          const pInfo = p.partner_breakdown ? p.partner_breakdown[partner] : null;
+          return (pInfo && pInfo.price) ? pInfo.price : (p.min_market_price || p.rrc_price || 0);
+        }
+        return p.min_market_price !== null ? p.min_market_price : (p.rrc_price || p.our_price || 0);
+      }
+      if (sourceKey === "rrc") {
+        return p.rrc_price || p.our_price || 0;
+      }
+      if (sourceKey === "current") {
+        return p.our_price || p.rrc_price || 0;
+      }
+      if (sourceKey === "partner") {
+        const partnerSelect = document.getElementById("exportPartnerSelect");
+        const chosen = partnerSelect ? partnerSelect.value : "";
+        const pInfo = p.partner_breakdown && chosen ? p.partner_breakdown[chosen] : null;
+        return (pInfo && pInfo.price) ? pInfo.price : (p.min_market_price || p.rrc_price || 0);
+      }
+      // default: min_in_stock
+      return p.min_market_price !== null ? p.min_market_price : (p.rrc_price || p.our_price || 0);
+    }
+
+    function renderExportPreview() {
+      const thead = document.getElementById("exportPreviewThead");
+      const tbody = document.getElementById("exportPreviewTbody");
+      const badge = document.getElementById("exportPreviewBadge");
+      if (!thead || !tbody) return;
+
+      const cols = getSelectedExportColumns();
+      const radios = document.getElementsByName("exportPriceSource");
+      let selectedSource = "fields";
+      for (const r of radios) {
+        if (r.checked) {
+          selectedSource = r.value;
+          break;
+        }
+      }
+
+      // Шапка таблицы предпросмотра
+      thead.innerHTML = `<tr>${cols.map(c => `<th class="px-2 py-1">${escapeHtml(c)}</th>`).join("")}</tr>`;
+
+      // Строки таблицы предпросмотра (первые 4 доступных товара)
+      const unlockedProducts = allProducts.filter(p => !p.is_locked);
+      if (badge) {
+        badge.textContent = `Позиций к выгрузке: ${unlockedProducts.length}`;
+      }
+
+      const previewRows = unlockedProducts.slice(0, 4);
+      if (previewRows.length === 0) {
+        tbody.innerHTML = `<tr><td colspan="${cols.length}" class="text-center text-muted py-2">Нет товаров для выгрузки</td></tr>`;
+        return;
+      }
+
+      const rowsHtml = previewRows.map(p => {
+        const priceVal = calculatePreviewPrice(p, selectedSource);
+        const cellMap = {
+          "Артикул": `<strong class="font-monospace">${escapeHtml(p.article)}</strong>`,
+          "ХОРОШОП АРТИКУЛ": `<span class="font-monospace text-secondary">${escapeHtml(p.horoshop_article || '—')}</span>`,
+          "Цена": `<strong class="text-success">${priceVal ? priceVal + ' грн' : '—'}</strong>`,
+          "Старая цена": p.rrc_price ? `${p.rrc_price} грн` : (p.our_price_old ? `${p.our_price_old} грн` : '—'),
+          "Название": `<span class="text-truncate d-inline-block" style="max-width: 220px;" title="${escapeHtml(p.title || '')}">${escapeHtml(p.title || '—')}</span>`,
+          "Бренд": p.brand ? `<span class="badge bg-light text-dark border">${escapeHtml(p.brand)}</span>` : '—'
+        };
+
+        const cellsHtml = cols.map(c => `<td class="px-2 py-1">${cellMap[c] !== undefined ? cellMap[c] : '—'}</td>`).join("");
+        return `<tr>${cellsHtml}</tr>`;
+      }).join("");
+
+      tbody.innerHTML = rowsHtml;
+    }
+
+    function executeCustomExport() {
+      saveExportColumnPreferences();
+
+      const radios = document.getElementsByName("exportPriceSource");
+      let selectedSource = "fields";
+      for (const r of radios) {
+        if (r.checked) {
+          selectedSource = r.value;
+          break;
+        }
+      }
+
+      const columns = getSelectedExportColumns();
+      let payload = { columns: columns };
+
+      if (selectedSource === "fields") {
+        const customPrices = {};
+        allProducts.forEach(p => {
+          if (!p.is_locked && p.target_price && p.target_price > 0) {
+            customPrices[p.article] = p.target_price;
+          }
+        });
+        payload.custom_prices = customPrices;
+        payload.strategy = "custom_fields";
+      } else if (selectedSource === "strategy") {
+        const stratSelect = document.getElementById("strategySelect");
+        const strat = stratSelect ? stratSelect.value : "min_in_stock";
+        payload.strategy = strat;
+        if (strat.startsWith("partner_")) {
+          payload.store = strat.replace("partner_", "").trim();
+        }
+      } else if (selectedSource === "partner") {
+        const partnerSelect = document.getElementById("exportPartnerSelect");
+        const chosen = partnerSelect ? partnerSelect.value : "";
+        payload.strategy = `partner_${chosen}`;
+        payload.store = chosen;
+      } else {
+        payload.strategy = selectedSource;
+      }
+
+      exportConfigModalInstance.hide();
+      triggerExcelDownload(payload);
+    }
+  </script>
+</body>
+</html>
